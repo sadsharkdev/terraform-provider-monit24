@@ -20,6 +20,49 @@ func resourceGroup() *schema.Resource {
 				Type:     schema.TypeString,
 				Required: true,
 			},
+			"is_default": {
+				Type:     schema.TypeBool,
+				Computed: true,
+			},
+			"periodic_daily_reports": {
+				Type:     schema.TypeBool,
+				Optional: true,
+				Default:  true,
+			},
+			"periodic_weekly_reports": {
+				Type:     schema.TypeBool,
+				Optional: true,
+				Default:  true,
+			},
+			"periodic_monthly_reports": {
+				Type:     schema.TypeBool,
+				Optional: true,
+				Default:  true,
+			},
+			"archived_services_in_periodic_reports": {
+				Type:     schema.TypeBool,
+				Optional: true,
+				Default:  true,
+			},
+			"assigned_sensor_ids": {
+				Type:     schema.TypeSet,
+				Optional: true,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"category": {
+							Type:     schema.TypeString,
+							Required: true,
+						},
+						"sensor_ids": {
+							Type:     schema.TypeSet,
+							Required: true,
+							Elem: &schema.Schema{
+								Type: schema.TypeInt,
+							},
+						},
+					},
+				},
+			},
 		},
 		Importer: &schema.ResourceImporter{
 			StateContext: schema.ImportStatePassthroughContext,
@@ -28,10 +71,34 @@ func resourceGroup() *schema.Resource {
 }
 
 func groupFromResourceData(d *schema.ResourceData, c client.Client) client.Group {
-	return client.Group{
-		Name:    d.Get("name").(string),
-		OwnerID: c.OwnerID(),
+	group := client.Group{
+		Name:                              d.Get("name").(string),
+		OwnerID:                           c.OwnerID(),
+		PeriodicDailyReports:              boolPtr(d.Get("periodic_daily_reports").(bool)),
+		PeriodicWeeklyReports:             boolPtr(d.Get("periodic_weekly_reports").(bool)),
+		PeriodicMonthlyReports:            boolPtr(d.Get("periodic_monthly_reports").(bool)),
+		ArchivedServicesInPeriodicReports: boolPtr(d.Get("archived_services_in_periodic_reports").(bool)),
 	}
+
+	set := d.Get("assigned_sensor_ids").(*schema.Set).List()
+	assigned := map[string][]int{}
+
+	for _, item := range set {
+		m := item.(map[string]interface{})
+		category := m["category"].(string)
+		idsSet := m["sensor_ids"].(*schema.Set).List()
+		ids := make([]int, len(idsSet))
+
+		for i := range idsSet {
+			ids[i] = idsSet[i].(int)
+		}
+
+		assigned[category] = ids
+	}
+
+	group.AssignedSensorIDs = &assigned
+
+	return group
 }
 
 func resourceGroupCreate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
@@ -72,6 +139,50 @@ func resourceGroupRead(ctx context.Context, d *schema.ResourceData, m interface{
 
 	if err := d.Set("name", group.Name); err != nil {
 		return diag.FromErr(err)
+	}
+
+	if group.IsDefault != nil {
+		if err := d.Set("is_default", *group.IsDefault); err != nil {
+			return diag.FromErr(err)
+		}
+	}
+
+	if group.PeriodicDailyReports != nil {
+		if err := d.Set("periodic_daily_reports", *group.PeriodicDailyReports); err != nil {
+			return diag.FromErr(err)
+		}
+	}
+
+	if group.PeriodicWeeklyReports != nil {
+		if err := d.Set("periodic_weekly_reports", *group.PeriodicWeeklyReports); err != nil {
+			return diag.FromErr(err)
+		}
+	}
+
+	if group.PeriodicMonthlyReports != nil {
+		if err := d.Set("periodic_monthly_reports", *group.PeriodicMonthlyReports); err != nil {
+			return diag.FromErr(err)
+		}
+	}
+
+	if group.ArchivedServicesInPeriodicReports != nil {
+		if err := d.Set("archived_services_in_periodic_reports", *group.ArchivedServicesInPeriodicReports); err != nil {
+			return diag.FromErr(err)
+		}
+	}
+
+	if group.AssignedSensorIDs != nil {
+		list := make([]map[string]interface{}, 0, len(*group.AssignedSensorIDs))
+		for category, ids := range *group.AssignedSensorIDs {
+			list = append(list, map[string]interface{}{
+				"category":   category,
+				"sensor_ids": ids,
+			})
+		}
+
+		if err := d.Set("assigned_sensor_ids", list); err != nil {
+			return diag.FromErr(err)
+		}
 	}
 
 	return diags

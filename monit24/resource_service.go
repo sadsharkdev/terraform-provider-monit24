@@ -56,6 +56,13 @@ func resourceService() *schema.Resource {
 					Type: schema.TypeInt,
 				},
 			},
+			"step_names": {
+				Type:     schema.TypeList,
+				Optional: true,
+				Elem: &schema.Schema{
+					Type: schema.TypeString,
+				},
+			},
 			"notification_channel_ids": {
 				Type:     schema.TypeSet,
 				Optional: true,
@@ -120,6 +127,17 @@ func newServiceFromResourceData(service client.Service, d *schema.ResourceData) 
 		}
 
 		service.SensorIDs = &ids
+	}
+
+	if v, ok := d.GetOk("step_names"); ok {
+		list := v.([]interface{})
+		names := make([]string, len(list))
+
+		for i := range list {
+			names[i] = list[i].(string)
+		}
+
+		service.StepNames = &names
 	}
 
 	if v, ok := d.GetOk("notification_channel_ids"); ok {
@@ -256,6 +274,12 @@ func resourceServiceRead(ctx context.Context, d *schema.ResourceData, m interfac
 
 	if service.SensorIDs != nil {
 		if err := d.Set("sensor_ids", *service.SensorIDs); err != nil {
+			return diag.FromErr(err)
+		}
+	}
+
+	if service.StepNames != nil {
+		if err := d.Set("step_names", *service.StepNames); err != nil {
 			return diag.FromErr(err)
 		}
 	}
