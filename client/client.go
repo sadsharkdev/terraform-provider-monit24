@@ -23,17 +23,19 @@ const baseURL = "https://api.monit24.pl/v3"
 type Client struct {
 	client    *http.Client
 	basicAuth string
+	token     string
 	ownerID   int
 }
 
 func NewBasicAuthClient(ctx context.Context, user string, password string) (Client, error) {
-	client := &http.Client{}
+	return newAuthenticatedClient(ctx, Client{basicAuth: basicAuth(user, password), client: &http.Client{}})
+}
 
-	c := Client{
-		basicAuth: basicAuth(user, password),
-		client:    client,
-	}
+func NewTokenClient(ctx context.Context, token string) (Client, error) {
+	return newAuthenticatedClient(ctx, Client{token: token, client: &http.Client{}})
+}
 
+func newAuthenticatedClient(ctx context.Context, c Client) (Client, error) {
 	account, err := c.getMyAccount(ctx)
 	if err != nil {
 		return Client{}, err
@@ -112,7 +114,7 @@ func (c Client) rawRequest(ctx context.Context, method string, path string, requ
 
 	req = req.WithContext(ctx)
 	req.Header.Add("Content-Type", "application/json")
-	req.Header.Add("Authorization", "Basic "+c.basicAuth)
+	req.Header.Add("Authorization", authorizationHeaderValue(c.basicAuth, c.token))
 
 	resp, err := c.client.Do(req)
 	if err != nil {
@@ -142,4 +144,11 @@ func (c Client) rawRequest(ctx context.Context, method string, path string, requ
 func basicAuth(user, password string) string {
 	auth := user + ":" + password
 	return base64.StdEncoding.EncodeToString([]byte(auth))
+}
+
+func authorizationHeaderValue(basicAuth, token string) string {
+	if token != "" {
+		return "Bearer " + token
+	}
+	return "Basic " + basicAuth
 }
