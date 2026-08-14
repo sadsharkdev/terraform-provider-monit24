@@ -49,6 +49,11 @@ func resourceService() *schema.Resource {
 				Optional: true,
 				Default:  true,
 			},
+			"is_archived": {
+				Type:     schema.TypeBool,
+				Optional: true,
+				Default:  false,
+			},
 			"sensor_ids": {
 				Type:     schema.TypeSet,
 				Optional: true,
@@ -117,6 +122,8 @@ func newServiceFromResourceData(service client.Service, d *schema.ResourceData) 
 
 	isActive := d.Get("is_active")
 	service.IsActive = boolPtr(isActive.(bool))
+
+	service.IsArchived = boolPtr(d.Get("is_archived").(bool))
 
 	if v, ok := d.GetOk("sensor_ids"); ok {
 		list := v.(*schema.Set).List()
@@ -268,6 +275,12 @@ func resourceServiceRead(ctx context.Context, d *schema.ResourceData, m interfac
 
 	if service.IsActive != nil {
 		if err := d.Set("is_active", *service.IsActive); err != nil {
+			return diag.FromErr(err)
+		}
+	}
+
+	if service.IsArchived != nil {
+		if err := d.Set("is_archived", *service.IsArchived); err != nil {
 			return diag.FromErr(err)
 		}
 	}

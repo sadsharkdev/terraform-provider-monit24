@@ -14,6 +14,7 @@ type Service struct {
 	Interval                   int                     `json:"interval"`
 	Description                *string                 `json:"description,omitempty"`
 	IsActive                   *bool                   `json:"is_active,omitempty"`
+	IsArchived                 *bool                   `json:"is_archived,omitempty"`
 	SensorIDs                  *[]int                  `json:"sensor_ids,omitempty"`
 	StepNames                  *[]string               `json:"step_names,omitempty"`
 	NotificationChannelIDs     *[]string               `json:"notification_channel_ids,omitempty"`
