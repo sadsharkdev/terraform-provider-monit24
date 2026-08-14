@@ -30,6 +30,7 @@ func Provider() *schema.Provider {
 			"monit24_notification_address":    resourceNotificationAddress(),
 			"monit24_periodic_report_address": resourcePeriodicReportAddress(),
 			"monit24_service":                 resourceService(),
+			"monit24_subaccount":              resourceSubaccount(),
 			"monit24_suspension":              resourceSuspension(),
 			"monit24_weekly_suspension":       resourceWeeklySuspension(),
 		},
