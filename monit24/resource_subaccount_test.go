@@ -30,7 +30,22 @@ func TestAccSubaccount(t *testing.T) {
 					resource.TestCheckResourceAttr("monit24_subaccount.test", "name", "TF acceptance test subaccount"),
 					resource.TestCheckResourceAttr("monit24_subaccount.test", "username", username),
 					resource.TestCheckResourceAttr("monit24_subaccount.test", "user_data.0.email_address", "tf-acceptance-tests@example.com"),
-					resource.TestCheckResourceAttrSet("monit24_subaccount.test", "parent_account_id"),
+					func(state *terraform.State) error {
+						c, err := client.NewBasicAuthClient(context.Background(), os.Getenv("MONIT24_USER"), os.Getenv("MONIT24_PASSWORD"))
+						if err != nil {
+							return err
+						}
+
+						sub := state.RootModule().Resources["monit24_subaccount.test"]
+						gotParentID := sub.Primary.Attributes["parent_account_id"]
+						wantParentID := strconv.Itoa(c.OwnerID())
+
+						if gotParentID != wantParentID {
+							return fmt.Errorf("expected parent_account_id to equal the caller's own account id (%s) since it's assumed to be inferred by POST /accounts/subaccount, got %s — if this fails, parent_account_id is NOT auto-inferred; make it an Optional (not Computed-only) field in resource_subaccount.go and set it explicitly from OwnerID()", wantParentID, gotParentID)
+						}
+
+						return nil
+					},
 					func(state *terraform.State) error {
 						sub := state.RootModule().Resources["monit24_subaccount.test"]
 						id, err := strconv.Atoi(sub.Primary.ID)
