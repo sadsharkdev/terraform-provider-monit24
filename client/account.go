@@ -15,6 +15,10 @@ type UserData struct {
 	TaxIdentificationNumber *string   `json:"tax_identification_number,omitempty"`
 	IPWhitelist             *[]string `json:"ip_whitelist,omitempty"`
 	IPWhitelistEnabled      *bool     `json:"ip_whitelist_enabled,omitempty"`
+	ID                      *int      `json:"id,omitempty"`
+	CreatedAt               *string   `json:"created_at,omitempty"`
+	Has2FAEnabled           *bool     `json:"has_2fa_enabled,omitempty"`
+	Settings                *[]string `json:"settings,omitempty"`
 }
 
 type Account struct {
