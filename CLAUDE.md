@@ -22,13 +22,22 @@ go test ./monit24/... -run TestAccService -v
 TF_ACC=1 go test ./monit24/... -run TestAccService -v -timeout 120m   # acceptance variant
 ```
 
-Acceptance tests (`TestAcc*`) require real credentials and talk to the live API — they need `MONIT24_USER`/`MONIT24_PASSWORD` set (checked by `preCheck` in `monit24/provider_test.go`). Plain `go test` without `TF_ACC=1` skips them.
+Acceptance tests (`TestAcc*`) require real credentials and talk to the live API — they need `MONIT24_USER`/`MONIT24_PASSWORD` (or `MONIT24_TOKEN`, see Authentication below) set (checked by `preCheck` in `monit24/provider_test.go`). Plain `go test` without `TF_ACC=1` skips them.
+
+## Authentication
+
+The provider supports two mutually exclusive auth modes, resolved in `providerConfigure` (`monit24/provider.go`):
+
+1. **`token`** (env `MONIT24_TOKEN`) — sent as `Authorization: Bearer <token>` on every request (`client.NewTokenClient`). This is the **only** way to authenticate an account that has 2FA enabled — Basic Auth is rejected for such accounts with an ambiguous "incorrect credentials or 2FA configured" error. Create the token from the Monit24 account UI (or `POST /sessions` with username+password, which returns a `token`).
+2. **`user`+`password`** (env `MONIT24_USER`/`MONIT24_PASSWORD`) — sent as `Authorization: Basic <base64(user:password)>` (`client.NewBasicAuthClient`). Only works for accounts without 2FA.
+
+If `token` is set, it takes priority and `user`/`password` are ignored entirely. `client/client.go`'s `authorizationHeaderValue(basicAuth, token string) string` picks the header; `client_test.go` unit-tests that selection logic directly (no live API needed).
 
 ## Architecture
 
 Two-layer structure, consistently applied per resource type:
 
-- **`client/`** — thin, dependency-free HTTP client for the Monit24 REST API. `client/client.go` holds the shared `Client` struct (basic-auth HTTP wrapper with `get`/`post`/`put`/`delete` helpers, `ResourceNotFound` error type, and `OwnerID()`). Each resource has its own file (`client/service.go`, `client/group.go`, `client/notification_address.go`, `client/account.go`, ...) with a data struct (JSON tags matching the API) and `Create*`/`Read*`/`Update*`/`Delete*` methods.
+- **`client/`** — thin, dependency-free HTTP client for the Monit24 REST API. `client/client.go` holds the shared `Client` struct (`get`/`post`/`put`/`delete` helpers, `ResourceNotFound` error type, `OwnerID()`, and the Basic/Bearer auth selection). Each resource has its own file (`client/service.go`, `client/group.go`, `client/notification_address.go`, `client/account.go`, ...) with a data struct (JSON tags matching the API) and `Create*`/`Read*`/`Update*`/`Delete*` methods.
 - **`monit24/`** — the Terraform SDK provider and resources. `monit24/provider.go` defines the provider schema (`user`/`password`) and registers resources in `ResourcesMap`. Each `monit24/resource_*.go` defines the Terraform schema and `CreateContext`/`ReadContext`/`UpdateContext`/`DeleteContext` functions that translate between `*schema.ResourceData` and the corresponding `client` struct.
 
 Key conventions to follow when touching a resource:
@@ -55,4 +64,4 @@ Eight resources are registered in `monit24/provider.go`, tracking Monit24 API v3
 
 ### Known gaps / deliberately out of scope
 
-A second "conditional alerting" subsystem exists in the API (`contacts`, `contact_groups`, `contact_addresses`, `events`, `escalations`, plus their suspension variants) — additive to, not a replacement for, `notification_address`; not yet modeled, see the design spec for the planned phased rollout. `report_templates` and `templates` (custom notification templates), `POST /accounts` (adding another login to the same account, distinct from `monit24_subaccount`'s dependent-account model), and the standalone `/user_data/{id}` and `/user_data/{id}/settings/{key}` endpoints are also not yet modeled — see the design spec's account-family fixes section for the planned additions. `reports` and `corrections` are intentionally never going to be resources (generate-once/point-in-time, no convergeable state). `sessions` is intentionally never going to be a resource (`POST /sessions` needs the same username+password the provider's Basic Auth already uses — no benefit to modeling it). `admin/*` is out of scope (Monit24-staff-only API surface). `Provider().DataSourcesMap` is still empty — the design spec's Phase 1 covers dictionary data sources, Phase 6 covers per-resource companion data sources. Authentication is currently Basic Auth only (`user`/`password`) — 2FA-enabled accounts can't authenticate yet; see the design spec's authentication fix section for the planned `MONIT24_TOKEN` addition.
+A second "conditional alerting" subsystem exists in the API (`contacts`, `contact_groups`, `contact_addresses`, `events`, `escalations`, plus their suspension variants) — additive to, not a replacement for, `notification_address`; not yet modeled, see the design spec for the planned phased rollout. `report_templates` and `templates` (custom notification templates), `POST /accounts` (adding another login to the same account, distinct from `monit24_subaccount`'s dependent-account model), and the standalone `/user_data/{id}` and `/user_data/{id}/settings/{key}` endpoints are also not yet modeled — see the design spec's account-family fixes section for the planned additions. `reports` and `corrections` are intentionally never going to be resources (generate-once/point-in-time, no convergeable state). `sessions` is intentionally never going to be a resource (`POST /sessions` needs the same username+password the provider's Basic Auth already uses — no benefit to modeling it). `admin/*` is out of scope (Monit24-staff-only API surface). `Provider().DataSourcesMap` is still empty — the design spec's Phase 1 covers dictionary data sources, Phase 6 covers per-resource companion data sources.

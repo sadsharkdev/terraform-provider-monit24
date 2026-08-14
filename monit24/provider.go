@@ -23,6 +23,12 @@ func Provider() *schema.Provider {
 				Sensitive:   true,
 				DefaultFunc: schema.EnvDefaultFunc("MONIT24_PASSWORD", nil),
 			},
+			"token": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				Sensitive:   true,
+				DefaultFunc: schema.EnvDefaultFunc("MONIT24_TOKEN", nil),
+			},
 		},
 		ResourcesMap: map[string]*schema.Resource{
 			"monit24_group":                   resourceGroup(),
@@ -40,10 +46,20 @@ func Provider() *schema.Provider {
 }
 
 func providerConfigure(ctx context.Context, d *schema.ResourceData) (interface{}, diag.Diagnostics) {
+	token := d.Get("token").(string)
 	user := d.Get("user").(string)
 	password := d.Get("password").(string)
 
 	var diags diag.Diagnostics
+
+	if token != "" {
+		c, err := client.NewTokenClient(ctx, token)
+		if err != nil {
+			return nil, diag.FromErr(err)
+		}
+
+		return c, diags
+	}
 
 	if user != "" && password != "" {
 		c, err := client.NewBasicAuthClient(ctx, user, password)
