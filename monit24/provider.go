@@ -40,6 +40,7 @@ func Provider() *schema.Provider {
 			"monit24_subaccount":              resourceSubaccount(),
 			"monit24_suspension":              resourceSuspension(),
 			"monit24_user_data":               resourceUserData(),
+			"monit24_user_data_setting":       resourceUserDataSetting(),
 			"monit24_weekly_suspension":       resourceWeeklySuspension(),
 		},
 		DataSourcesMap:       map[string]*schema.Resource{},
