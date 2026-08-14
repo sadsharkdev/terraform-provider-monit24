@@ -67,6 +67,21 @@ func (c Client) CreateSubaccount(ctx context.Context, req SubaccountCreateReques
 	return response.ID, err
 }
 
+func (c Client) CreateAccountUser(ctx context.Context, req SubaccountCreateRequest) (int, error) {
+	resp, err := c.post(ctx, "/accounts", req)
+	if err != nil {
+		return 0, err
+	}
+
+	var response CreateSubaccountResponse
+	err = json.Unmarshal(resp, &response)
+	if err != nil {
+		return 0, err
+	}
+
+	return response.ID, err
+}
+
 func (c Client) ReadAccount(ctx context.Context, id int) (Account, error) {
 	resp, err := c.get(ctx, fmt.Sprintf("/accounts/%v", id))
 	if err != nil {

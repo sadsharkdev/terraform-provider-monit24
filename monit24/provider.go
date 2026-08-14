@@ -31,6 +31,7 @@ func Provider() *schema.Provider {
 			},
 		},
 		ResourcesMap: map[string]*schema.Resource{
+			"monit24_account_user":            resourceAccountUser(),
 			"monit24_group":                   resourceGroup(),
 			"monit24_group_share":             resourceGroupShare(),
 			"monit24_notification_address":    resourceNotificationAddress(),
