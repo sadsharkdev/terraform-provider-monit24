@@ -18,13 +18,18 @@ type UserData struct {
 	ID                      *int      `json:"id,omitempty"`
 	CreatedAt               *string   `json:"created_at,omitempty"`
 	Has2FAEnabled           *bool     `json:"has_2fa_enabled,omitempty"`
-	Settings                *[]string `json:"settings,omitempty"`
+	// Not modeled as a typed Go value: this provider never reads or writes
+	// individual settings through this field (see monit24_user_data_setting
+	// for that), and the API's actual JSON shape for it isn't documented
+	// anywhere accessible to this client, so json.RawMessage avoids an
+	// unmarshal failure regardless of whether it's an array or object.
+	Settings json.RawMessage `json:"settings,omitempty"`
 }
 
 type Account struct {
 	Name                       string  `json:"name"`
 	Username                   string  `json:"username"`
-	PackageID                  int     `json:"package_id,omitempty"`
+	PackageID                  *int    `json:"package_id,omitempty"`
 	ParentAccountID            *int    `json:"parent_account_id,omitempty"`
 	IsActivated                *bool   `json:"is_activated,omitempty"`
 	IsBlocked                  *bool   `json:"is_blocked,omitempty"`
@@ -53,22 +58,15 @@ type passwordUpdateData struct {
 }
 
 func (c Client) CreateSubaccount(ctx context.Context, req SubaccountCreateRequest) (int, error) {
-	resp, err := c.post(ctx, "/accounts/subaccount", req)
-	if err != nil {
-		return 0, err
-	}
-
-	var response CreateSubaccountResponse
-	err = json.Unmarshal(resp, &response)
-	if err != nil {
-		return 0, err
-	}
-
-	return response.ID, err
+	return c.createAccount(ctx, "/accounts/subaccount", req)
 }
 
 func (c Client) CreateAccountUser(ctx context.Context, req SubaccountCreateRequest) (int, error) {
-	resp, err := c.post(ctx, "/accounts", req)
+	return c.createAccount(ctx, "/accounts", req)
+}
+
+func (c Client) createAccount(ctx context.Context, path string, req SubaccountCreateRequest) (int, error) {
+	resp, err := c.post(ctx, path, req)
 	if err != nil {
 		return 0, err
 	}

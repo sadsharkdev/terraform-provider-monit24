@@ -98,6 +98,8 @@ func flatUserDataFromResourceData(d *schema.ResourceData) client.UserData {
 }
 
 func resourceUserDataCreate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
+	var diags diag.Diagnostics
+
 	c := m.(client.Client)
 
 	accountID := d.Get("account_id").(int)
@@ -110,7 +112,9 @@ func resourceUserDataCreate(ctx context.Context, d *schema.ResourceData, m inter
 
 	d.SetId(strconv.Itoa(accountID))
 
-	return resourceUserDataRead(ctx, d, m)
+	// No Computed fields in this schema, so everything the API would return
+	// is already known from config — no need to re-fetch via Read.
+	return diags
 }
 
 func resourceUserDataRead(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
@@ -180,6 +184,8 @@ func resourceUserDataRead(ctx context.Context, d *schema.ResourceData, m interfa
 }
 
 func resourceUserDataUpdate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
+	var diags diag.Diagnostics
+
 	c := m.(client.Client)
 
 	id, err := strconv.Atoi(d.Id())
@@ -194,7 +200,7 @@ func resourceUserDataUpdate(ctx context.Context, d *schema.ResourceData, m inter
 		return diag.FromErr(err)
 	}
 
-	return resourceUserDataRead(ctx, d, m)
+	return diags
 }
 
 func resourceUserDataDelete(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {

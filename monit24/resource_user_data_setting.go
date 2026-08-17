@@ -58,6 +58,8 @@ func parseUserDataSettingID(id string) (accountID int, key string, err error) {
 }
 
 func resourceUserDataSettingCreate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
+	var diags diag.Diagnostics
+
 	c := m.(client.Client)
 
 	accountID := d.Get("account_id").(int)
@@ -71,7 +73,9 @@ func resourceUserDataSettingCreate(ctx context.Context, d *schema.ResourceData, 
 
 	d.SetId(userDataSettingID(accountID, key))
 
-	return resourceUserDataSettingRead(ctx, d, m)
+	// No Computed fields in this schema, so everything the API would return
+	// is already known from config — no need to re-fetch via Read.
+	return diags
 }
 
 func resourceUserDataSettingRead(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
@@ -109,6 +113,8 @@ func resourceUserDataSettingRead(ctx context.Context, d *schema.ResourceData, m 
 }
 
 func resourceUserDataSettingUpdate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
+	var diags diag.Diagnostics
+
 	c := m.(client.Client)
 
 	accountID, key, err := parseUserDataSettingID(d.Id())
@@ -123,7 +129,7 @@ func resourceUserDataSettingUpdate(ctx context.Context, d *schema.ResourceData, 
 		return diag.FromErr(err)
 	}
 
-	return resourceUserDataSettingRead(ctx, d, m)
+	return diags
 }
 
 func resourceUserDataSettingDelete(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {

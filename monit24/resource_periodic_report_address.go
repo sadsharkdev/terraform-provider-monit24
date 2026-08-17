@@ -46,8 +46,6 @@ func periodicReportAddressFromResourceData(d *schema.ResourceData, c client.Clie
 }
 
 func resourcePeriodicReportAddressCreate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
-	var diags diag.Diagnostics
-
 	c := m.(client.Client)
 
 	address := periodicReportAddressFromResourceData(d, c)
@@ -59,7 +57,7 @@ func resourcePeriodicReportAddressCreate(ctx context.Context, d *schema.Resource
 
 	d.SetId(strconv.Itoa(id))
 
-	return diags
+	return resourcePeriodicReportAddressRead(ctx, d, m)
 }
 
 func resourcePeriodicReportAddressRead(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {

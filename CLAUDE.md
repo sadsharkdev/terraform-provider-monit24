@@ -49,6 +49,8 @@ Key conventions to follow when touching a resource:
 - `client.Client.OwnerID()` resolves to the parent account ID when the authenticated user is a sub-account; resources pass this as `owner_id` on create/update.
 - `extended_settings` (service resource) is a free-form string map; values are coerced to int/bool/string on write (`newServiceFromResourceData`) and merged against currently-defined keys on read (`mergeMaps`) since the API can return additional settings the config doesn't declare.
 - A resource whose underlying API record can't be independently deleted (it's implicitly tied to a parent's lifecycle, e.g. `monit24_user_data` — there's no `DELETE /user_data/{id}`) implements `DeleteContext` as a state-only no-op (`d.SetId(""); return nil`), not an API call.
+- `updateAccountAndPassword` (`monit24/resource_subaccount.go`) is shared by `monit24_subaccount` and `monit24_account_user`: it only calls `UpdateAccount` when `d.HasChangesExcept("password")` is true, and routes a `password` change through `ChangeAccountPassword` separately — avoids a redundant PUT on password-only rotations and keeps the two resources' Update logic from drifting apart.
+- For an `Optional` (non-`Required`, non-`Computed`) collection field where "never configured" and "explicitly cleared" must be told apart (see `assigned_sensor_ids` on `monit24_group`), gate the write on `d.HasChange(fieldName)` rather than `d.GetOk`/unconditional `d.Get`: `HasChange` is false both when the field was never touched (old and new are both the zero value) and when nothing changed on this apply, but true when a prior value was cleared — so it sends the field to clear it without also stomping on an account that never manages it via Terraform.
 
 ## Resources
 

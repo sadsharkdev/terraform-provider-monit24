@@ -148,15 +148,20 @@ func resourceSubaccount() *schema.Resource {
 }
 
 func accountFromResourceData(d *schema.ResourceData) client.Account {
-	return client.Account{
+	account := client.Account{
 		Name:                       d.Get("name").(string),
 		Username:                   d.Get("username").(string),
-		PackageID:                  d.Get("package_id").(int),
 		IsReadOnly:                 boolPtr(d.Get("is_read_only").(bool)),
 		DisableLegacyNotifications: boolPtr(d.Get("disable_legacy_notifications").(bool)),
 		LanguageID:                 strPtr(d.Get("language_id").(string)),
 		TimeZoneID:                 strPtr(d.Get("time_zone_id").(string)),
 	}
+
+	if v, ok := d.GetOk("package_id"); ok {
+		account.PackageID = intPtr(v.(int))
+	}
+
+	return account
 }
 
 func userDataFromResourceData(d *schema.ResourceData) client.UserData {
@@ -253,8 +258,10 @@ func resourceSubaccountRead(ctx context.Context, d *schema.ResourceData, m inter
 		return diag.FromErr(err)
 	}
 
-	if err := d.Set("package_id", account.PackageID); err != nil {
-		return diag.FromErr(err)
+	if account.PackageID != nil {
+		if err := d.Set("package_id", *account.PackageID); err != nil {
+			return diag.FromErr(err)
+		}
 	}
 
 	if account.IsReadOnly != nil {
@@ -310,23 +317,36 @@ func resourceSubaccountUpdate(ctx context.Context, d *schema.ResourceData, m int
 		return diag.FromErr(err)
 	}
 
-	account := accountFromResourceData(d)
-
-	err = c.UpdateAccount(ctx, id, account)
-	if err != nil {
+	if err := updateAccountAndPassword(ctx, c, id, d); err != nil {
 		return diag.FromErr(err)
+	}
+
+	return resourceSubaccountRead(ctx, d, m)
+}
+
+// updateAccountAndPassword is shared by monit24_subaccount and
+// monit24_account_user, which both PUT the same client.Account shape and
+// route password changes through the dedicated change_password action
+// instead of the account PUT. Skipping UpdateAccount when only password
+// changed avoids sending a redundant PUT on password-only rotations.
+func updateAccountAndPassword(ctx context.Context, c client.Client, id int, d *schema.ResourceData) error {
+	if d.HasChangesExcept("password") {
+		account := accountFromResourceData(d)
+
+		if err := c.UpdateAccount(ctx, id, account); err != nil {
+			return err
+		}
 	}
 
 	if d.HasChange("password") {
 		if password := d.Get("password").(string); password != "" {
-			err = c.ChangeAccountPassword(ctx, id, password)
-			if err != nil {
-				return diag.FromErr(err)
+			if err := c.ChangeAccountPassword(ctx, id, password); err != nil {
+				return err
 			}
 		}
 	}
 
-	return resourceSubaccountRead(ctx, d, m)
+	return nil
 }
 
 func resourceSubaccountDelete(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {

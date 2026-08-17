@@ -160,8 +160,10 @@ func resourceAccountUserRead(ctx context.Context, d *schema.ResourceData, m inte
 		return diag.FromErr(err)
 	}
 
-	if err := d.Set("package_id", account.PackageID); err != nil {
-		return diag.FromErr(err)
+	if account.PackageID != nil {
+		if err := d.Set("package_id", *account.PackageID); err != nil {
+			return diag.FromErr(err)
+		}
 	}
 
 	if account.IsReadOnly != nil {
@@ -211,20 +213,8 @@ func resourceAccountUserUpdate(ctx context.Context, d *schema.ResourceData, m in
 		return diag.FromErr(err)
 	}
 
-	account := accountFromResourceData(d)
-
-	err = c.UpdateAccount(ctx, id, account)
-	if err != nil {
+	if err := updateAccountAndPassword(ctx, c, id, d); err != nil {
 		return diag.FromErr(err)
-	}
-
-	if d.HasChange("password") {
-		if password := d.Get("password").(string); password != "" {
-			err = c.ChangeAccountPassword(ctx, id, password)
-			if err != nil {
-				return diag.FromErr(err)
-			}
-		}
 	}
 
 	return resourceAccountUserRead(ctx, d, m)

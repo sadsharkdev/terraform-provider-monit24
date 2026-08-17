@@ -2,6 +2,7 @@ package monit24
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
@@ -70,7 +71,7 @@ func resourceGroup() *schema.Resource {
 	}
 }
 
-func groupFromResourceData(d *schema.ResourceData, c client.Client) client.Group {
+func groupFromResourceData(d *schema.ResourceData, c client.Client) (client.Group, error) {
 	group := client.Group{
 		Name:                              d.Get("name").(string),
 		OwnerID:                           c.OwnerID(),
@@ -80,33 +81,45 @@ func groupFromResourceData(d *schema.ResourceData, c client.Client) client.Group
 		ArchivedServicesInPeriodicReports: boolPtr(d.Get("archived_services_in_periodic_reports").(bool)),
 	}
 
-	set := d.Get("assigned_sensor_ids").(*schema.Set).List()
-	assigned := map[string][]int{}
+	// Only send assigned_sensor_ids when it actually changed, so accounts that
+	// never manage it via Terraform don't have it silently cleared on every
+	// apply, while removing a previously-configured block still clears it
+	// server-side (HasChange is true when going from populated to empty).
+	if d.HasChange("assigned_sensor_ids") {
+		set := d.Get("assigned_sensor_ids").(*schema.Set).List()
+		assigned := map[string][]int{}
 
-	for _, item := range set {
-		m := item.(map[string]interface{})
-		category := m["category"].(string)
-		idsSet := m["sensor_ids"].(*schema.Set).List()
-		ids := make([]int, len(idsSet))
+		for _, item := range set {
+			m := item.(map[string]interface{})
+			category := m["category"].(string)
 
-		for i := range idsSet {
-			ids[i] = idsSet[i].(int)
+			if _, exists := assigned[category]; exists {
+				return client.Group{}, fmt.Errorf("duplicate category %q in assigned_sensor_ids", category)
+			}
+
+			idsSet := m["sensor_ids"].(*schema.Set).List()
+			ids := make([]int, len(idsSet))
+
+			for i := range idsSet {
+				ids[i] = idsSet[i].(int)
+			}
+
+			assigned[category] = ids
 		}
 
-		assigned[category] = ids
+		group.AssignedSensorIDs = &assigned
 	}
 
-	group.AssignedSensorIDs = &assigned
-
-	return group
+	return group, nil
 }
 
 func resourceGroupCreate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
-	var diags diag.Diagnostics
-
 	c := m.(client.Client)
 
-	group := groupFromResourceData(d, c)
+	group, err := groupFromResourceData(d, c)
+	if err != nil {
+		return diag.FromErr(err)
+	}
 
 	id, err := c.CreateGroup(ctx, group)
 	if err != nil {
@@ -115,7 +128,7 @@ func resourceGroupCreate(ctx context.Context, d *schema.ResourceData, m interfac
 
 	d.SetId(strconv.Itoa(id))
 
-	return diags
+	return resourceGroupRead(ctx, d, m)
 }
 
 func resourceGroupRead(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
@@ -189,11 +202,12 @@ func resourceGroupRead(ctx context.Context, d *schema.ResourceData, m interface{
 }
 
 func resourceGroupUpdate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
-	var diags diag.Diagnostics
-
 	c := m.(client.Client)
 
-	group := groupFromResourceData(d, c)
+	group, err := groupFromResourceData(d, c)
+	if err != nil {
+		return diag.FromErr(err)
+	}
 
 	id, err := strconv.Atoi(d.Id())
 	if err != nil {
@@ -205,7 +219,7 @@ func resourceGroupUpdate(ctx context.Context, d *schema.ResourceData, m interfac
 		return diag.FromErr(err)
 	}
 
-	return diags
+	return resourceGroupRead(ctx, d, m)
 }
 
 func resourceGroupDelete(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
