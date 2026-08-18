@@ -18,21 +18,30 @@ func (r ResourceNotFound) Error() string {
 	return "Resource not found: " + r.message
 }
 
-const baseURL = "https://api.monit24.pl/v3"
+const defaultBaseURL = "https://api.monit24.pl/v3"
 
 type Client struct {
 	client    *http.Client
 	basicAuth string
 	token     string
 	ownerID   int
+	baseURL   string
 }
 
 func NewBasicAuthClient(ctx context.Context, user string, password string) (Client, error) {
-	return newAuthenticatedClient(ctx, Client{basicAuth: basicAuth(user, password), client: &http.Client{}})
+	return newAuthenticatedClient(ctx, Client{basicAuth: basicAuth(user, password), client: &http.Client{}, baseURL: defaultBaseURL})
 }
 
 func NewTokenClient(ctx context.Context, token string) (Client, error) {
-	return newAuthenticatedClient(ctx, Client{token: token, client: &http.Client{}})
+	return newAuthenticatedClient(ctx, Client{token: token, client: &http.Client{}, baseURL: defaultBaseURL})
+}
+
+// NewTestClient builds a Client pointed at an arbitrary baseURL (an
+// httptest.Server in tests) instead of the real API, skipping the
+// getMyAccount round trip NewBasicAuthClient/NewTokenClient normally do.
+// Exported so monit24-package tests can construct a fake-backed client too.
+func NewTestClient(baseURL string) Client {
+	return Client{client: &http.Client{}, baseURL: baseURL}
 }
 
 func newAuthenticatedClient(ctx context.Context, c Client) (Client, error) {
@@ -107,7 +116,7 @@ func (c Client) requestWithPayload(ctx context.Context, method string, path stri
 }
 
 func (c Client) rawRequest(ctx context.Context, method string, path string, requestBody io.Reader, expectedStatusCode int) ([]byte, error) {
-	req, err := http.NewRequest(method, baseURL+path, requestBody)
+	req, err := http.NewRequest(method, c.baseURL+path, requestBody)
 	if err != nil {
 		return nil, err
 	}
