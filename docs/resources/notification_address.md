@@ -33,18 +33,23 @@ resource "monit24_notification_address" "phone" {
 
 ### Required
 
-- **address** (String)
-- **group_id** (Number)
-- **notification_channel_id** (String)
+- `address` (String)
+- `notification_channel_id` (String)
 
 ### Optional
 
-- **description** (String)
-- **id** (String) The ID of this resource.
+- `description` (String)
+- `group_id` (Number)
+
+### Read-Only
+
+- `id` (String) The ID of this resource.
 
 ## Import
 
 Import is supported using the following syntax:
+
+The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import) can be used, for example:
 
 ```shell
 terraform import monit24_notification_address.email 123456

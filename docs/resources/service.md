@@ -66,27 +66,34 @@ resource "monit24_service" "ping_service" {
 
 ### Required
 
-- **address** (String)
-- **group_id** (Number)
-- **name** (String)
-- **type_id** (String)
+- `address` (String)
+- `name` (String)
+- `type_id` (String)
 
 ### Optional
 
-- **description** (String)
-- **extended_settings** (Map of String)
-- **id** (String) The ID of this resource.
-- **interval** (Number)
-- **is_active** (Boolean)
-- **sensor_ids** (Set of Int) Use custom monitoring station IDs, instead of group defined ones.
-- **notification_channel_ids** (Set of String)
-- **notification_condition_ids** (Set of String)
-- **notification_mode_id** (String)
-- **recovery_notification_mode_id** (String)
+- `description` (String)
+- `extended_settings` (Map of String)
+- `group_id` (Number)
+- `interval` (Number)
+- `is_active` (Boolean)
+- `is_archived` (Boolean)
+- `notification_channel_ids` (Set of String)
+- `notification_condition_ids` (Set of String)
+- `notification_mode_id` (String)
+- `recovery_notification_mode_id` (String)
+- `sensor_ids` (Set of Number)
+- `step_names` (List of String)
+
+### Read-Only
+
+- `id` (String) The ID of this resource.
 
 ## Import
 
 Import is supported using the following syntax:
+
+The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import) can be used, for example:
 
 ```shell
 terraform import monit24_service.https_service 123456

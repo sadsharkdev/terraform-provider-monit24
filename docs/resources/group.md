@@ -14,7 +14,16 @@ description: |-
 
 ```terraform
 resource "monit24_group" "example" {
-  name = "An example group"
+  name                                   = "An example group"
+  periodic_daily_reports                 = true
+  periodic_weekly_reports                = true
+  periodic_monthly_reports               = true
+  archived_services_in_periodic_reports  = true
+
+  assigned_sensor_ids {
+    category   = "default"
+    sensor_ids = [1, 2]
+  }
 }
 ```
 
@@ -23,15 +32,34 @@ resource "monit24_group" "example" {
 
 ### Required
 
-- **name** (String)
+- `name` (String)
 
 ### Optional
 
-- **id** (String) The ID of this resource.
+- `archived_services_in_periodic_reports` (Boolean)
+- `assigned_sensor_ids` (Block Set) (see [below for nested schema](#nestedblock--assigned_sensor_ids))
+- `periodic_daily_reports` (Boolean)
+- `periodic_monthly_reports` (Boolean)
+- `periodic_weekly_reports` (Boolean)
+
+### Read-Only
+
+- `id` (String) The ID of this resource.
+- `is_default` (Boolean)
+
+<a id="nestedblock--assigned_sensor_ids"></a>
+### Nested Schema for `assigned_sensor_ids`
+
+Required:
+
+- `category` (String)
+- `sensor_ids` (Set of Number)
 
 ## Import
 
 Import is supported using the following syntax:
+
+The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import) can be used, for example:
 
 ```shell
 terraform import monit24_group.example 123456

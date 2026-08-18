@@ -48,5 +48,6 @@ resource "monit24_service" "test_https_service" {
 
 ### Optional
 
-- **password** (String, Sensitive)
-- **user** (String)
+- `password` (String, Sensitive)
+- `token` (String, Sensitive)
+- `user` (String)
