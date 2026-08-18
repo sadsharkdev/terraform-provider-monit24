@@ -2,6 +2,9 @@ package monit24
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"strconv"
 	"testing"
@@ -292,6 +295,84 @@ func TestNewServiceFromResourceData(t *testing.T) {
 			t.Errorf("expected http_method to stay a string \"POST\", got %v (%T)", settings["http_method"], settings["http_method"])
 		}
 	})
+}
+
+func TestServiceCreateUpdateReadDeleteLifecycle(t *testing.T) {
+	var stored client.Service
+	var putCount, getCount int
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/services":
+			if err := json.NewDecoder(r.Body).Decode(&stored); err != nil {
+				t.Fatalf("failed to decode POST body: %v", err)
+			}
+			w.WriteHeader(http.StatusCreated)
+			json.NewEncoder(w).Encode(client.CreateServiceResponse{ID: 1})
+		case r.Method == http.MethodGet && r.URL.Path == "/services/1":
+			getCount++
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(stored)
+		case r.Method == http.MethodPut && r.URL.Path == "/services/1":
+			putCount++
+			if err := json.NewDecoder(r.Body).Decode(&stored); err != nil {
+				t.Fatalf("failed to decode PUT body: %v", err)
+			}
+			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodDelete && r.URL.Path == "/services/1":
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	c := client.NewTestClient(server.URL)
+
+	d := schema.TestResourceDataRaw(t, resourceService().Schema, map[string]interface{}{
+		"type_id": "https",
+		"name":    "example",
+		"address": "example.com",
+	})
+
+	if diags := resourceServiceCreate(context.Background(), d, c); diags.HasError() {
+		t.Fatalf("unexpected error creating service: %v", diags)
+	}
+
+	if d.Id() != "1" {
+		t.Fatalf("expected id \"1\", got %q", d.Id())
+	}
+	if stored.TypeID != "https" || stored.Name != "example" || stored.Address != "example.com" {
+		t.Errorf("expected create request to carry type_id/name/address, server stored %+v", stored)
+	}
+	// resourceServiceCreate delegates to resourceServiceUpdate, which reads
+	// the just-created service and re-PUTs+re-reads it — this is the
+	// documented one-pass-to-populate-all-fields pattern from CLAUDE.md.
+	if putCount != 1 || getCount != 2 {
+		t.Errorf("expected create to trigger exactly 1 PUT and 2 GETs (from the Update delegation), got %d PUT(s) and %d GET(s)", putCount, getCount)
+	}
+
+	if diags := resourceServiceRead(context.Background(), d, c); diags.HasError() {
+		t.Fatalf("unexpected error reading service: %v", diags)
+	}
+	if d.Get("name").(string) != "example" {
+		t.Errorf("expected name to round-trip through read, got %q", d.Get("name"))
+	}
+
+	if err := d.Set("description", "updated description"); err != nil {
+		t.Fatalf("unexpected error setting description: %v", err)
+	}
+	if diags := resourceServiceUpdate(context.Background(), d, c); diags.HasError() {
+		t.Fatalf("unexpected error updating service: %v", diags)
+	}
+	if stored.Description == nil || *stored.Description != "updated description" {
+		t.Errorf("expected update request to carry the new description, server stored %+v", stored.Description)
+	}
+
+	if diags := resourceServiceDelete(context.Background(), d, c); diags.HasError() {
+		t.Fatalf("unexpected error deleting service: %v", diags)
+	}
 }
 
 func TestParseBool(t *testing.T) {

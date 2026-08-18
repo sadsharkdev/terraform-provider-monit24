@@ -2,7 +2,10 @@ package monit24
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"strconv"
 	"testing"
@@ -242,4 +245,128 @@ func TestUserDataFromResourceData(t *testing.T) {
 			t.Errorf("expected ip_whitelist_enabled=true, got %v", userData.IPWhitelistEnabled)
 		}
 	})
+}
+
+func TestUpdateAccountAndPasswordSkipsAccountPUTWhenOnlyPasswordChanges(t *testing.T) {
+	var putCalled, changePasswordCalled bool
+	var gotNewPassword string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPut && r.URL.Path == "/accounts/1":
+			putCalled = true
+			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodPost && r.URL.Path == "/accounts/1/change_password":
+			changePasswordCalled = true
+			var body struct {
+				NewPassword string `json:"new_password"`
+			}
+			json.NewDecoder(r.Body).Decode(&body)
+			gotNewPassword = body.NewPassword
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	c := client.NewTestClient(server.URL)
+
+	// name/username are omitted so their diff is old="" new="" (no change);
+	// language_id/time_zone_id are explicitly zeroed to cancel out their
+	// non-empty schema Default, which would otherwise register as a change
+	// from nil old state. This isolates password as the only changed field.
+	d := schema.TestResourceDataRaw(t, resourceSubaccount().Schema, map[string]interface{}{
+		"language_id":  "",
+		"time_zone_id": "",
+		"password":     "new-password",
+	})
+
+	if !d.HasChange("password") {
+		t.Fatal("test setup invalid: expected HasChange(\"password\") to be true")
+	}
+	if d.HasChangesExcept("password") {
+		t.Fatal("test setup invalid: expected HasChangesExcept(\"password\") to be false — some other field is registering as changed")
+	}
+
+	if err := updateAccountAndPassword(context.Background(), c, 1, d); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if putCalled {
+		t.Error("expected UpdateAccount PUT to be skipped when only password changed, but it was called")
+	}
+	if !changePasswordCalled {
+		t.Error("expected ChangeAccountPassword to be called, but it wasn't")
+	}
+	if gotNewPassword != "new-password" {
+		t.Errorf("expected new_password=\"new-password\", got %q", gotNewPassword)
+	}
+}
+
+func TestUpdateAccountAndPasswordCallsBothWhenOtherFieldsAlsoChange(t *testing.T) {
+	var putCalled, changePasswordCalled bool
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPut && r.URL.Path == "/accounts/1":
+			putCalled = true
+			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodPost && r.URL.Path == "/accounts/1/change_password":
+			changePasswordCalled = true
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	c := client.NewTestClient(server.URL)
+
+	d := schema.TestResourceDataRaw(t, resourceSubaccount().Schema, map[string]interface{}{
+		"name":     "renamed",
+		"username": "example-user",
+		"password": "new-password",
+	})
+
+	if !d.HasChangesExcept("password") {
+		t.Fatal("test setup invalid: expected HasChangesExcept(\"password\") to be true when name/username are configured")
+	}
+
+	if err := updateAccountAndPassword(context.Background(), c, 1, d); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !putCalled {
+		t.Error("expected UpdateAccount PUT to be called when other fields changed alongside password")
+	}
+	if !changePasswordCalled {
+		t.Error("expected ChangeAccountPassword to still be called")
+	}
+}
+
+func TestUpdateAccountAndPasswordSkipsChangePasswordWhenUnchanged(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPut && r.URL.Path == "/accounts/1":
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Errorf("unexpected request %s %s (change_password should not be called)", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	c := client.NewTestClient(server.URL)
+
+	d := schema.TestResourceDataRaw(t, resourceSubaccount().Schema, map[string]interface{}{
+		"name":     "renamed",
+		"username": "example-user",
+	})
+
+	if err := updateAccountAndPassword(context.Background(), c, 1, d); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 }

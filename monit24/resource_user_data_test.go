@@ -1,10 +1,16 @@
 package monit24
 
 import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+
+	"github.com/monit24/terraform-provider-monit24/client"
 )
 
 func TestAccUserData(t *testing.T) {
@@ -108,4 +114,80 @@ func TestFlatUserDataFromResourceData(t *testing.T) {
 			t.Errorf("expected ip_whitelist_enabled=true, got %v", userData.IPWhitelistEnabled)
 		}
 	})
+}
+
+func TestUserDataCreateUpdateDeleteLifecycle(t *testing.T) {
+	var stored client.UserData
+	var getCount int
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPut && r.URL.Path == "/user_data/1":
+			if err := json.NewDecoder(r.Body).Decode(&stored); err != nil {
+				t.Fatalf("failed to decode PUT body: %v", err)
+			}
+			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodGet && r.URL.Path == "/user_data/1":
+			getCount++
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(stored)
+		default:
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	c := client.NewTestClient(server.URL)
+
+	d := schema.TestResourceDataRaw(t, resourceUserData().Schema, map[string]interface{}{
+		"account_id":    1,
+		"email_address": "test@example.com",
+	})
+
+	if diags := resourceUserDataCreate(context.Background(), d, c); diags.HasError() {
+		t.Fatalf("unexpected error creating user_data: %v", diags)
+	}
+	if d.Id() != "1" {
+		t.Fatalf("expected id \"1\", got %q", d.Id())
+	}
+	if stored.EmailAddress != "test@example.com" {
+		t.Errorf("expected create request to carry email_address, server stored %+v", stored)
+	}
+	// There are no Computed fields in this schema, so Create must not
+	// re-fetch via Read — a GET here would mean the no-redundant-Read fix
+	// from the code review regressed.
+	if getCount != 0 {
+		t.Errorf("expected Create to not call Read (no Computed fields), but GET was called %d time(s)", getCount)
+	}
+
+	if diags := resourceUserDataRead(context.Background(), d, c); diags.HasError() {
+		t.Fatalf("unexpected error reading user_data: %v", diags)
+	}
+	if d.Get("email_address").(string) != "test@example.com" {
+		t.Errorf("expected email_address to round-trip through read, got %q", d.Get("email_address"))
+	}
+	if getCount != 1 {
+		t.Errorf("expected exactly 1 GET from the explicit Read call, got %d", getCount)
+	}
+
+	if err := d.Set("contact_person", "Jane Doe"); err != nil {
+		t.Fatalf("unexpected error setting contact_person: %v", err)
+	}
+	if diags := resourceUserDataUpdate(context.Background(), d, c); diags.HasError() {
+		t.Fatalf("unexpected error updating user_data: %v", diags)
+	}
+	if stored.ContactPerson == nil || *stored.ContactPerson != "Jane Doe" {
+		t.Errorf("expected update request to carry the new contact_person, server stored %+v", stored.ContactPerson)
+	}
+	if getCount != 1 {
+		t.Errorf("expected Update to not call Read either, but GET count changed to %d", getCount)
+	}
+
+	if diags := resourceUserDataDelete(context.Background(), d, c); diags.HasError() {
+		t.Fatalf("unexpected error deleting user_data: %v", diags)
+	}
+	if d.Id() != "" {
+		t.Errorf("expected Delete to be a state-only no-op clearing the id, got %q", d.Id())
+	}
 }
