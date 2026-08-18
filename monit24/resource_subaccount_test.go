@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 
 	"github.com/monit24/terraform-provider-monit24/client"
@@ -129,4 +130,116 @@ resource "monit24_subaccount" "test" {
   }
 }
 `, username)
+}
+
+func TestAccountFromResourceData(t *testing.T) {
+	t.Run("required fields and package_id unset stays nil", func(t *testing.T) {
+		d := schema.TestResourceDataRaw(t, resourceSubaccount().Schema, map[string]interface{}{
+			"name":     "example",
+			"username": "example-user",
+		})
+
+		account := accountFromResourceData(d)
+
+		if account.Name != "example" || account.Username != "example-user" {
+			t.Errorf("expected name/username to round-trip, got %+v", account)
+		}
+		if account.PackageID != nil {
+			t.Errorf("expected package_id to stay nil when not configured, got %v", *account.PackageID)
+		}
+		if account.IsReadOnly == nil || *account.IsReadOnly {
+			t.Errorf("expected is_read_only default false, got %v", account.IsReadOnly)
+		}
+		if account.DisableLegacyNotifications == nil || *account.DisableLegacyNotifications {
+			t.Errorf("expected disable_legacy_notifications default false, got %v", account.DisableLegacyNotifications)
+		}
+		if account.LanguageID == nil || *account.LanguageID != "pl" {
+			t.Errorf("expected language_id default \"pl\", got %v", account.LanguageID)
+		}
+		if account.TimeZoneID == nil || *account.TimeZoneID != "europe_warsaw" {
+			t.Errorf("expected time_zone_id default \"europe_warsaw\", got %v", account.TimeZoneID)
+		}
+	})
+
+	t.Run("package_id set is passed through as a pointer", func(t *testing.T) {
+		d := schema.TestResourceDataRaw(t, resourceSubaccount().Schema, map[string]interface{}{
+			"name":       "example",
+			"username":   "example-user",
+			"package_id": 5,
+		})
+
+		account := accountFromResourceData(d)
+
+		if account.PackageID == nil || *account.PackageID != 5 {
+			t.Errorf("expected package_id=5, got %v", account.PackageID)
+		}
+	})
+}
+
+func TestUserDataFromResourceData(t *testing.T) {
+	t.Run("required field only", func(t *testing.T) {
+		d := schema.TestResourceDataRaw(t, resourceSubaccount().Schema, map[string]interface{}{
+			"name":     "example",
+			"username": "example-user",
+			"user_data": []interface{}{
+				map[string]interface{}{
+					"email_address": "test@example.com",
+				},
+			},
+		})
+
+		userData := userDataFromResourceData(d)
+
+		if userData.EmailAddress != "test@example.com" {
+			t.Errorf("expected email_address to round-trip, got %q", userData.EmailAddress)
+		}
+		if userData.Address != nil {
+			t.Errorf("expected address to stay nil when not configured, got %v", *userData.Address)
+		}
+		if userData.IPWhitelist != nil {
+			t.Errorf("expected ip_whitelist to stay nil when not configured, got %v", *userData.IPWhitelist)
+		}
+		if userData.IPWhitelistEnabled == nil || *userData.IPWhitelistEnabled {
+			t.Errorf("expected ip_whitelist_enabled default false, got %v", userData.IPWhitelistEnabled)
+		}
+	})
+
+	t.Run("optional fields and ip_whitelist", func(t *testing.T) {
+		d := schema.TestResourceDataRaw(t, resourceSubaccount().Schema, map[string]interface{}{
+			"name":     "example",
+			"username": "example-user",
+			"user_data": []interface{}{
+				map[string]interface{}{
+					"email_address":             "test@example.com",
+					"address":                   "1 Example St",
+					"contact_person":            "Jane Doe",
+					"phone_number":              "+48123456789",
+					"tax_identification_number": "1234567890",
+					"ip_whitelist":              []interface{}{"1.2.3.4", "5.6.7.8"},
+					"ip_whitelist_enabled":      true,
+				},
+			},
+		})
+
+		userData := userDataFromResourceData(d)
+
+		if userData.Address == nil || *userData.Address != "1 Example St" {
+			t.Errorf("expected address to round-trip, got %v", userData.Address)
+		}
+		if userData.ContactPerson == nil || *userData.ContactPerson != "Jane Doe" {
+			t.Errorf("expected contact_person to round-trip, got %v", userData.ContactPerson)
+		}
+		if userData.PhoneNumber == nil || *userData.PhoneNumber != "+48123456789" {
+			t.Errorf("expected phone_number to round-trip, got %v", userData.PhoneNumber)
+		}
+		if userData.TaxIdentificationNumber == nil || *userData.TaxIdentificationNumber != "1234567890" {
+			t.Errorf("expected tax_identification_number to round-trip, got %v", userData.TaxIdentificationNumber)
+		}
+		if userData.IPWhitelist == nil || len(*userData.IPWhitelist) != 2 || (*userData.IPWhitelist)[0] != "1.2.3.4" {
+			t.Errorf("expected ordered ip_whitelist, got %v", userData.IPWhitelist)
+		}
+		if userData.IPWhitelistEnabled == nil || !*userData.IPWhitelistEnabled {
+			t.Errorf("expected ip_whitelist_enabled=true, got %v", userData.IPWhitelistEnabled)
+		}
+	})
 }

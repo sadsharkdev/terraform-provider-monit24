@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
 
 func TestAccAccountUser(t *testing.T) {
@@ -37,4 +38,36 @@ resource "monit24_account_user" "test" {
   }
 }
 `, username)
+}
+
+func TestAccountUserSchemaHasNoSubaccountOnlyFields(t *testing.T) {
+	s := resourceAccountUser().Schema
+
+	for _, field := range []string{"set_password_url", "subaccount_block", "subaccount_edit", "is_2fa_setup_required", "parent_account_id"} {
+		if _, ok := s[field]; ok {
+			t.Errorf("expected monit24_account_user schema to not define %q (subaccount-only field), but it does", field)
+		}
+	}
+}
+
+func TestAccountUserSharesAccountFromResourceDataMapping(t *testing.T) {
+	d := schema.TestResourceDataRaw(t, resourceAccountUser().Schema, map[string]interface{}{
+		"name":     "example",
+		"username": "example-user",
+		"user_data": []interface{}{
+			map[string]interface{}{
+				"email_address": "test@example.com",
+			},
+		},
+	})
+
+	account := accountFromResourceData(d)
+	if account.Name != "example" || account.Username != "example-user" {
+		t.Errorf("expected name/username to round-trip, got %+v", account)
+	}
+
+	userData := userDataFromResourceData(d)
+	if userData.EmailAddress != "test@example.com" {
+		t.Errorf("expected email_address to round-trip, got %q", userData.EmailAddress)
+	}
 }

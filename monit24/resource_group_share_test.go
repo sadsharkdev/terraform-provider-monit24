@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
 
 func TestAccGroupShare(t *testing.T) {
@@ -91,5 +92,25 @@ func TestParseGroupShareIDInvalid(t *testing.T) {
 		if _, _, err := parseGroupShareID(id); err == nil {
 			t.Errorf("parseGroupShareID(%q): expected an error, got nil", id)
 		}
+	}
+}
+
+func TestGroupShareFromResourceData(t *testing.T) {
+	d := schema.TestResourceDataRaw(t, resourceGroupShare().Schema, map[string]interface{}{
+		"group_id":         1,
+		"account_id":       2,
+		"can_modify_group": true,
+	})
+
+	share := groupShareFromResourceData(d)
+
+	if share.GroupID != 1 || share.AccountID != 2 {
+		t.Errorf("expected group_id=1 account_id=2, got %+v", share)
+	}
+	if share.CanModifyGroup == nil || !*share.CanModifyGroup {
+		t.Errorf("expected can_modify_group=true, got %v", share.CanModifyGroup)
+	}
+	if share.CanCreateServices == nil || *share.CanCreateServices {
+		t.Errorf("expected can_create_services default false, got %v", share.CanCreateServices)
 	}
 }
