@@ -1,10 +1,16 @@
 package monit24
 
 import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+
+	"github.com/monit24/terraform-provider-monit24/client"
 )
 
 func TestAccWeeklySuspension(t *testing.T) {
@@ -103,6 +109,74 @@ func TestMinuteOfWeekResourceDataRoundTrip(t *testing.T) {
 	got := back[0].(map[string]interface{})
 	if got["day_of_week"] != 3 || got["hour"] != 14 || got["minute"] != 30 {
 		t.Fatalf("expected round-trip to preserve values, got %+v", got)
+	}
+}
+
+func TestWeeklySuspensionCreateUpdateDeleteLifecycle(t *testing.T) {
+	var stored client.WeeklySuspension
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/weekly_suspensions":
+			json.NewDecoder(r.Body).Decode(&stored)
+			w.WriteHeader(http.StatusCreated)
+			json.NewEncoder(w).Encode(map[string]int{"id": 1})
+		case r.Method == http.MethodGet && r.URL.Path == "/weekly_suspensions/1":
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(stored)
+		case r.Method == http.MethodPut && r.URL.Path == "/weekly_suspensions/1":
+			json.NewDecoder(r.Body).Decode(&stored)
+			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodDelete && r.URL.Path == "/weekly_suspensions/1":
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	c := client.NewTestClient(server.URL)
+
+	d := schema.TestResourceDataRaw(t, resourceWeeklySuspension().Schema, map[string]interface{}{
+		"service_id": 1,
+		"start_minute": []interface{}{
+			map[string]interface{}{"day_of_week": 6, "hour": 22, "minute": 0},
+		},
+		"end_minute": []interface{}{
+			map[string]interface{}{"day_of_week": 7, "hour": 2, "minute": 0},
+		},
+	})
+
+	if diags := resourceWeeklySuspensionCreate(context.Background(), d, c); diags.HasError() {
+		t.Fatalf("unexpected error creating weekly_suspension: %v", diags)
+	}
+	if d.Id() != "1" {
+		t.Fatalf("expected id \"1\", got %q", d.Id())
+	}
+	if stored.StartMinute.DayOfWeek != 6 {
+		t.Errorf("expected create request to carry start_minute, server stored %+v", stored)
+	}
+
+	if diags := resourceWeeklySuspensionRead(context.Background(), d, c); diags.HasError() {
+		t.Fatalf("unexpected error reading weekly_suspension: %v", diags)
+	}
+	if d.Get("service_id").(int) != 1 {
+		t.Errorf("expected service_id to round-trip through read, got %v", d.Get("service_id"))
+	}
+
+	if err := d.Set("description", "weekend quiet hours"); err != nil {
+		t.Fatalf("unexpected error setting description: %v", err)
+	}
+	if diags := resourceWeeklySuspensionUpdate(context.Background(), d, c); diags.HasError() {
+		t.Fatalf("unexpected error updating weekly_suspension: %v", diags)
+	}
+	if stored.Description == nil || *stored.Description != "weekend quiet hours" {
+		t.Errorf("expected update request to carry the new description, server stored %+v", stored.Description)
+	}
+
+	if diags := resourceWeeklySuspensionDelete(context.Background(), d, c); diags.HasError() {
+		t.Fatalf("unexpected error deleting weekly_suspension: %v", diags)
 	}
 }
 

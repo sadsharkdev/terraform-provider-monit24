@@ -1,13 +1,19 @@
 package monit24
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"strconv"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+
+	"github.com/monit24/terraform-provider-monit24/client"
 )
 
 func TestAccGroupShare(t *testing.T) {
@@ -112,5 +118,64 @@ func TestGroupShareFromResourceData(t *testing.T) {
 	}
 	if share.CanCreateServices == nil || *share.CanCreateServices {
 		t.Errorf("expected can_create_services default false, got %v", share.CanCreateServices)
+	}
+}
+
+func TestGroupShareCreateUpdateDeleteLifecycle(t *testing.T) {
+	var stored client.GroupShare
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPut && r.URL.Path == "/groups/1/shares/2":
+			json.NewDecoder(r.Body).Decode(&stored)
+			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodGet && r.URL.Path == "/groups/1/shares/2":
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(stored)
+		case r.Method == http.MethodDelete && r.URL.Path == "/groups/1/shares/2":
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	c := client.NewTestClient(server.URL)
+
+	d := schema.TestResourceDataRaw(t, resourceGroupShare().Schema, map[string]interface{}{
+		"group_id":   1,
+		"account_id": 2,
+	})
+
+	if diags := resourceGroupShareCreate(context.Background(), d, c); diags.HasError() {
+		t.Fatalf("unexpected error creating group_share: %v", diags)
+	}
+	if d.Id() != "1:2" {
+		t.Fatalf("expected id \"1:2\", got %q", d.Id())
+	}
+	if stored.GroupID != 1 || stored.AccountID != 2 {
+		t.Errorf("expected create request to carry group_id/account_id, server stored %+v", stored)
+	}
+
+	if diags := resourceGroupShareRead(context.Background(), d, c); diags.HasError() {
+		t.Fatalf("unexpected error reading group_share: %v", diags)
+	}
+	if d.Get("group_id").(int) != 1 {
+		t.Errorf("expected group_id to round-trip through read, got %v", d.Get("group_id"))
+	}
+
+	if err := d.Set("can_modify_group", true); err != nil {
+		t.Fatalf("unexpected error setting can_modify_group: %v", err)
+	}
+	if diags := resourceGroupShareUpdate(context.Background(), d, c); diags.HasError() {
+		t.Fatalf("unexpected error updating group_share: %v", diags)
+	}
+	if stored.CanModifyGroup == nil || !*stored.CanModifyGroup {
+		t.Errorf("expected update request to carry can_modify_group=true, server stored %+v", stored.CanModifyGroup)
+	}
+
+	if diags := resourceGroupShareDelete(context.Background(), d, c); diags.HasError() {
+		t.Fatalf("unexpected error deleting group_share: %v", diags)
 	}
 }
