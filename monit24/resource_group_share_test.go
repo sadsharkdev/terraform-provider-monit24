@@ -68,3 +68,28 @@ resource "monit24_group" "test" {
 }
 `, accountID)
 }
+
+func TestGroupShareIDRoundTrip(t *testing.T) {
+	id := groupShareID(123, 456)
+	if id != "123:456" {
+		t.Fatalf("expected %q, got %q", "123:456", id)
+	}
+
+	groupID, accountID, err := parseGroupShareID(id)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if groupID != 123 || accountID != 456 {
+		t.Fatalf("expected (123, 456), got (%d, %d)", groupID, accountID)
+	}
+}
+
+func TestParseGroupShareIDInvalid(t *testing.T) {
+	tests := []string{"", "123", "123:abc", "abc:456"}
+
+	for _, id := range tests {
+		if _, _, err := parseGroupShareID(id); err == nil {
+			t.Errorf("parseGroupShareID(%q): expected an error, got nil", id)
+		}
+	}
+}
