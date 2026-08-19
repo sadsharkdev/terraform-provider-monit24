@@ -57,8 +57,11 @@ func suspensionFromResourceData(d *schema.ResourceData) client.Suspension {
 		suspension.StartTime = strPtr(v.(string))
 	}
 
-	if v, ok := d.GetOk("description"); ok {
-		suspension.Description = strPtr(v.(string))
+	// HasChange, not GetOk: GetOk can't distinguish "never configured" from
+	// "explicitly cleared" (both read as ""), so clearing a previously-set
+	// description would never reach the API.
+	if d.HasChange("description") {
+		suspension.Description = strPtr(d.Get("description").(string))
 	}
 
 	return suspension

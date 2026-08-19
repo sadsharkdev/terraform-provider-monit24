@@ -346,11 +346,12 @@ func TestServiceCreateUpdateReadDeleteLifecycle(t *testing.T) {
 	if stored.TypeID != "https" || stored.Name != "example" || stored.Address != "example.com" {
 		t.Errorf("expected create request to carry type_id/name/address, server stored %+v", stored)
 	}
-	// resourceServiceCreate delegates to resourceServiceUpdate, which reads
-	// the just-created service and re-PUTs+re-reads it — this is the
-	// documented one-pass-to-populate-all-fields pattern from CLAUDE.md.
-	if putCount != 1 || getCount != 2 {
-		t.Errorf("expected create to trigger exactly 1 PUT and 2 GETs (from the Update delegation), got %d PUT(s) and %d GET(s)", putCount, getCount)
+	// resourceServiceCreate delegates straight to resourceServiceRead — the
+	// POST above already carries every field the config specifies, so no
+	// extra PUT/GET round trip is needed (matching every sibling resource's
+	// plain Create->Read pattern).
+	if putCount != 0 || getCount != 1 {
+		t.Errorf("expected create to trigger 0 PUTs and exactly 1 GET (from the Read delegation), got %d PUT(s) and %d GET(s)", putCount, getCount)
 	}
 
 	if diags := resourceServiceRead(context.Background(), d, c); diags.HasError() {

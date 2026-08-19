@@ -125,8 +125,12 @@ func newServiceFromResourceData(service client.Service, d *schema.ResourceData) 
 
 	service.IsArchived = boolPtr(d.Get("is_archived").(bool))
 
-	if v, ok := d.GetOk("sensor_ids"); ok {
-		list := v.(*schema.Set).List()
+	// HasChange, not GetOk: both sensor_ids and step_names are Optional
+	// (non-Computed) collections, so GetOk can't distinguish "never
+	// configured" from "explicitly cleared" (both read as empty), and a
+	// clear would never reach the API.
+	if d.HasChange("sensor_ids") {
+		list := d.Get("sensor_ids").(*schema.Set).List()
 		ids := make([]int, len(list))
 
 		for i := range list {
@@ -136,8 +140,8 @@ func newServiceFromResourceData(service client.Service, d *schema.ResourceData) 
 		service.SensorIDs = &ids
 	}
 
-	if v, ok := d.GetOk("step_names"); ok {
-		list := v.([]interface{})
+	if d.HasChange("step_names") {
+		list := d.Get("step_names").([]interface{})
 		names := make([]string, len(list))
 
 		for i := range list {
@@ -225,7 +229,12 @@ func resourceServiceCreate(ctx context.Context, d *schema.ResourceData, m interf
 
 	d.SetId(strconv.Itoa(id))
 
-	return resourceServiceUpdate(ctx, d, m)
+	// Delegate to Read, not Update: the POST above already carries every
+	// field newServiceFromResourceData can produce from d, so a follow-up
+	// GET->rebuild->PUT->GET (what Update does) would just re-send the same
+	// struct and re-fetch the same state — matching the plain Create->Read
+	// pattern every sibling resource uses.
+	return resourceServiceRead(ctx, d, m)
 }
 
 func resourceServiceRead(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {

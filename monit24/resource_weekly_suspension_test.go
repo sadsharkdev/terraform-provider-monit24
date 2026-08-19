@@ -165,9 +165,22 @@ func TestWeeklySuspensionCreateUpdateDeleteLifecycle(t *testing.T) {
 		t.Errorf("expected service_id to round-trip through read, got %v", d.Get("service_id"))
 	}
 
-	if err := d.Set("description", "weekend quiet hours"); err != nil {
-		t.Fatalf("unexpected error setting description: %v", err)
-	}
+	// d.Set doesn't affect HasChange (it writes the "set" overlay, not the
+	// diff), so a fresh ResourceData built from raw config is used here to
+	// get a genuine "configured" diff for description, with the id carried
+	// over manually — matching weeklySuspensionFromResourceData's HasChange gate.
+	d = schema.TestResourceDataRaw(t, resourceWeeklySuspension().Schema, map[string]interface{}{
+		"service_id": 1,
+		"start_minute": []interface{}{
+			map[string]interface{}{"day_of_week": 6, "hour": 22, "minute": 0},
+		},
+		"end_minute": []interface{}{
+			map[string]interface{}{"day_of_week": 7, "hour": 2, "minute": 0},
+		},
+		"description": "weekend quiet hours",
+	})
+	d.SetId("1")
+
 	if diags := resourceWeeklySuspensionUpdate(context.Background(), d, c); diags.HasError() {
 		t.Fatalf("unexpected error updating weekly_suspension: %v", diags)
 	}

@@ -184,18 +184,24 @@ func resourceGroupRead(ctx context.Context, d *schema.ResourceData, m interface{
 		}
 	}
 
+	// Always call d.Set, even when the API returned no map at all (nil):
+	// assigned_sensor_ids is Optional (non-Computed), so nil genuinely means
+	// "no assignments" and must be reflected as an empty list. Skipping
+	// d.Set on nil would leave a stale, previously-set value stuck in state
+	// forever if the API responds with null/omits the key once cleared,
+	// since Read is never re-run to correct it on its own.
+	list := make([]map[string]interface{}, 0)
 	if group.AssignedSensorIDs != nil {
-		list := make([]map[string]interface{}, 0, len(*group.AssignedSensorIDs))
 		for category, ids := range *group.AssignedSensorIDs {
 			list = append(list, map[string]interface{}{
 				"category":   category,
 				"sensor_ids": ids,
 			})
 		}
+	}
 
-		if err := d.Set("assigned_sensor_ids", list); err != nil {
-			return diag.FromErr(err)
-		}
+	if err := d.Set("assigned_sensor_ids", list); err != nil {
+		return diag.FromErr(err)
 	}
 
 	return diags

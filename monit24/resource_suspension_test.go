@@ -165,9 +165,17 @@ func TestSuspensionCreateUpdateDeleteLifecycle(t *testing.T) {
 		t.Errorf("expected service_id to round-trip through read, got %v", d.Get("service_id"))
 	}
 
-	if err := d.Set("description", "planned maintenance"); err != nil {
-		t.Fatalf("unexpected error setting description: %v", err)
-	}
+	// d.Set doesn't affect HasChange (it writes the "set" overlay, not the
+	// diff), so a fresh ResourceData built from raw config is used here to
+	// get a genuine "configured" diff for description, with the id carried
+	// over manually — matching suspensionFromResourceData's HasChange gate.
+	d = schema.TestResourceDataRaw(t, resourceSuspension().Schema, map[string]interface{}{
+		"service_id":  1,
+		"end_time":    "2099-01-01T00:00:00Z",
+		"description": "planned maintenance",
+	})
+	d.SetId("1")
+
 	if diags := resourceSuspensionUpdate(context.Background(), d, c); diags.HasError() {
 		t.Fatalf("unexpected error updating suspension: %v", diags)
 	}

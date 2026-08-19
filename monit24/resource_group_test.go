@@ -203,3 +203,40 @@ func TestGroupCreateUpdateDeleteLifecycle(t *testing.T) {
 		t.Fatalf("unexpected error deleting group: %v", diags)
 	}
 }
+
+func TestGroupReadClearsAssignedSensorIDsWhenAPIReturnsNil(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		// No assigned_sensor_ids key at all, matching how the live API might
+		// respond once a previously-set assignment has been cleared.
+		json.NewEncoder(w).Encode(client.Group{Name: "test group"})
+	}))
+	defer server.Close()
+
+	c := client.NewTestClient(server.URL)
+
+	d := schema.TestResourceDataRaw(t, resourceGroup().Schema, map[string]interface{}{
+		"name": "test group",
+	})
+	d.SetId("1")
+
+	// Simulate stale prior state: a previously-set assignment sitting in
+	// state from before it was cleared server-side.
+	if err := d.Set("assigned_sensor_ids", []interface{}{
+		map[string]interface{}{
+			"category":   "default",
+			"sensor_ids": []interface{}{1, 2},
+		},
+	}); err != nil {
+		t.Fatalf("unexpected error seeding stale assigned_sensor_ids: %v", err)
+	}
+
+	if diags := resourceGroupRead(context.Background(), d, c); diags.HasError() {
+		t.Fatalf("unexpected error reading group: %v", diags)
+	}
+
+	got := d.Get("assigned_sensor_ids").(*schema.Set).List()
+	if len(got) != 0 {
+		t.Errorf("expected assigned_sensor_ids to be cleared to an empty set when the API returns nil, got %v", got)
+	}
+}

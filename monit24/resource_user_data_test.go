@@ -171,9 +171,18 @@ func TestUserDataCreateUpdateDeleteLifecycle(t *testing.T) {
 		t.Errorf("expected exactly 1 GET from the explicit Read call, got %d", getCount)
 	}
 
-	if err := d.Set("contact_person", "Jane Doe"); err != nil {
-		t.Fatalf("unexpected error setting contact_person: %v", err)
-	}
+	// d.Set doesn't affect HasChange (it writes the "set" overlay, not the
+	// diff), so a fresh ResourceData built from raw config is used here to
+	// get a genuine "configured" diff for contact_person, with the id
+	// carried over manually — matching flatUserDataFromResourceData's
+	// HasChange gate.
+	d = schema.TestResourceDataRaw(t, resourceUserData().Schema, map[string]interface{}{
+		"account_id":     1,
+		"email_address":  "test@example.com",
+		"contact_person": "Jane Doe",
+	})
+	d.SetId("1")
+
 	if diags := resourceUserDataUpdate(context.Background(), d, c); diags.HasError() {
 		t.Fatalf("unexpected error updating user_data: %v", diags)
 	}

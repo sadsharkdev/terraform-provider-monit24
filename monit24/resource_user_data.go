@@ -65,24 +65,28 @@ func flatUserDataFromResourceData(d *schema.ResourceData) client.UserData {
 		EmailAddress: d.Get("email_address").(string),
 	}
 
-	if v, ok := d.GetOk("address"); ok {
-		userData.Address = strPtr(v.(string))
+	// Gate on HasChange rather than GetOk: GetOk can't tell "never configured"
+	// apart from "explicitly cleared" since both read as the zero value, so a
+	// user removing a previously-set value from config would never reach the
+	// API (omitempty drops a nil pointer) and the clear would silently fail.
+	if d.HasChange("address") {
+		userData.Address = strPtr(d.Get("address").(string))
 	}
 
-	if v, ok := d.GetOk("contact_person"); ok {
-		userData.ContactPerson = strPtr(v.(string))
+	if d.HasChange("contact_person") {
+		userData.ContactPerson = strPtr(d.Get("contact_person").(string))
 	}
 
-	if v, ok := d.GetOk("phone_number"); ok {
-		userData.PhoneNumber = strPtr(v.(string))
+	if d.HasChange("phone_number") {
+		userData.PhoneNumber = strPtr(d.Get("phone_number").(string))
 	}
 
-	if v, ok := d.GetOk("tax_identification_number"); ok {
-		userData.TaxIdentificationNumber = strPtr(v.(string))
+	if d.HasChange("tax_identification_number") {
+		userData.TaxIdentificationNumber = strPtr(d.Get("tax_identification_number").(string))
 	}
 
-	if v, ok := d.GetOk("ip_whitelist"); ok {
-		list := v.([]interface{})
+	if d.HasChange("ip_whitelist") {
+		list := d.Get("ip_whitelist").([]interface{})
 		ips := make([]string, len(list))
 
 		for i := range list {
