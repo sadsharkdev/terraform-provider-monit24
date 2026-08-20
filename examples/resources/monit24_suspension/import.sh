@@ -1,0 +1,1 @@
+terraform import monit24_suspension.maintenance_window 123456

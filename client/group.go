@@ -7,8 +7,14 @@ import (
 )
 
 type Group struct {
-	Name    string `json:"name"`
-	OwnerID int    `json:"owner_id"`
+	Name                              string            `json:"name"`
+	OwnerID                           int               `json:"owner_id"`
+	IsDefault                         *bool             `json:"is_default,omitempty"`
+	PeriodicDailyReports              *bool             `json:"periodic_daily_reports,omitempty"`
+	PeriodicWeeklyReports             *bool             `json:"periodic_weekly_reports,omitempty"`
+	PeriodicMonthlyReports            *bool             `json:"periodic_monthly_reports,omitempty"`
+	ArchivedServicesInPeriodicReports *bool             `json:"archived_services_in_periodic_reports,omitempty"`
+	AssignedSensorIDs                 *map[string][]int `json:"assigned_sensor_ids,omitempty"`
 }
 
 type CreateGroupResponse struct {

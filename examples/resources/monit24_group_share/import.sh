@@ -1,0 +1,1 @@
+terraform import monit24_group_share.read_only 123456:654321

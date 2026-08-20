@@ -2,6 +2,7 @@ package monit24
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
@@ -20,6 +21,49 @@ func resourceGroup() *schema.Resource {
 				Type:     schema.TypeString,
 				Required: true,
 			},
+			"is_default": {
+				Type:     schema.TypeBool,
+				Computed: true,
+			},
+			"periodic_daily_reports": {
+				Type:     schema.TypeBool,
+				Optional: true,
+				Default:  true,
+			},
+			"periodic_weekly_reports": {
+				Type:     schema.TypeBool,
+				Optional: true,
+				Default:  true,
+			},
+			"periodic_monthly_reports": {
+				Type:     schema.TypeBool,
+				Optional: true,
+				Default:  true,
+			},
+			"archived_services_in_periodic_reports": {
+				Type:     schema.TypeBool,
+				Optional: true,
+				Default:  true,
+			},
+			"assigned_sensor_ids": {
+				Type:     schema.TypeSet,
+				Optional: true,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"category": {
+							Type:     schema.TypeString,
+							Required: true,
+						},
+						"sensor_ids": {
+							Type:     schema.TypeSet,
+							Required: true,
+							Elem: &schema.Schema{
+								Type: schema.TypeInt,
+							},
+						},
+					},
+				},
+			},
 		},
 		Importer: &schema.ResourceImporter{
 			StateContext: schema.ImportStatePassthroughContext,
@@ -27,19 +71,55 @@ func resourceGroup() *schema.Resource {
 	}
 }
 
-func groupFromResourceData(d *schema.ResourceData, c client.Client) client.Group {
-	return client.Group{
-		Name:    d.Get("name").(string),
-		OwnerID: c.OwnerID(),
+func groupFromResourceData(d *schema.ResourceData, c client.Client) (client.Group, error) {
+	group := client.Group{
+		Name:                              d.Get("name").(string),
+		OwnerID:                           c.OwnerID(),
+		PeriodicDailyReports:              boolPtr(d.Get("periodic_daily_reports").(bool)),
+		PeriodicWeeklyReports:             boolPtr(d.Get("periodic_weekly_reports").(bool)),
+		PeriodicMonthlyReports:            boolPtr(d.Get("periodic_monthly_reports").(bool)),
+		ArchivedServicesInPeriodicReports: boolPtr(d.Get("archived_services_in_periodic_reports").(bool)),
 	}
+
+	// Only send assigned_sensor_ids when it actually changed, so accounts that
+	// never manage it via Terraform don't have it silently cleared on every
+	// apply, while removing a previously-configured block still clears it
+	// server-side (HasChange is true when going from populated to empty).
+	if d.HasChange("assigned_sensor_ids") {
+		set := d.Get("assigned_sensor_ids").(*schema.Set).List()
+		assigned := map[string][]int{}
+
+		for _, item := range set {
+			m := item.(map[string]interface{})
+			category := m["category"].(string)
+
+			if _, exists := assigned[category]; exists {
+				return client.Group{}, fmt.Errorf("duplicate category %q in assigned_sensor_ids", category)
+			}
+
+			idsSet := m["sensor_ids"].(*schema.Set).List()
+			ids := make([]int, len(idsSet))
+
+			for i := range idsSet {
+				ids[i] = idsSet[i].(int)
+			}
+
+			assigned[category] = ids
+		}
+
+		group.AssignedSensorIDs = &assigned
+	}
+
+	return group, nil
 }
 
 func resourceGroupCreate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
-	var diags diag.Diagnostics
-
 	c := m.(client.Client)
 
-	group := groupFromResourceData(d, c)
+	group, err := groupFromResourceData(d, c)
+	if err != nil {
+		return diag.FromErr(err)
+	}
 
 	id, err := c.CreateGroup(ctx, group)
 	if err != nil {
@@ -48,7 +128,7 @@ func resourceGroupCreate(ctx context.Context, d *schema.ResourceData, m interfac
 
 	d.SetId(strconv.Itoa(id))
 
-	return diags
+	return resourceGroupRead(ctx, d, m)
 }
 
 func resourceGroupRead(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
@@ -74,15 +154,66 @@ func resourceGroupRead(ctx context.Context, d *schema.ResourceData, m interface{
 		return diag.FromErr(err)
 	}
 
+	if group.IsDefault != nil {
+		if err := d.Set("is_default", *group.IsDefault); err != nil {
+			return diag.FromErr(err)
+		}
+	}
+
+	if group.PeriodicDailyReports != nil {
+		if err := d.Set("periodic_daily_reports", *group.PeriodicDailyReports); err != nil {
+			return diag.FromErr(err)
+		}
+	}
+
+	if group.PeriodicWeeklyReports != nil {
+		if err := d.Set("periodic_weekly_reports", *group.PeriodicWeeklyReports); err != nil {
+			return diag.FromErr(err)
+		}
+	}
+
+	if group.PeriodicMonthlyReports != nil {
+		if err := d.Set("periodic_monthly_reports", *group.PeriodicMonthlyReports); err != nil {
+			return diag.FromErr(err)
+		}
+	}
+
+	if group.ArchivedServicesInPeriodicReports != nil {
+		if err := d.Set("archived_services_in_periodic_reports", *group.ArchivedServicesInPeriodicReports); err != nil {
+			return diag.FromErr(err)
+		}
+	}
+
+	// Always call d.Set, even when the API returned no map at all (nil):
+	// assigned_sensor_ids is Optional (non-Computed), so nil genuinely means
+	// "no assignments" and must be reflected as an empty list. Skipping
+	// d.Set on nil would leave a stale, previously-set value stuck in state
+	// forever if the API responds with null/omits the key once cleared,
+	// since Read is never re-run to correct it on its own.
+	list := make([]map[string]interface{}, 0)
+	if group.AssignedSensorIDs != nil {
+		for category, ids := range *group.AssignedSensorIDs {
+			list = append(list, map[string]interface{}{
+				"category":   category,
+				"sensor_ids": ids,
+			})
+		}
+	}
+
+	if err := d.Set("assigned_sensor_ids", list); err != nil {
+		return diag.FromErr(err)
+	}
+
 	return diags
 }
 
 func resourceGroupUpdate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
-	var diags diag.Diagnostics
-
 	c := m.(client.Client)
 
-	group := groupFromResourceData(d, c)
+	group, err := groupFromResourceData(d, c)
+	if err != nil {
+		return diag.FromErr(err)
+	}
 
 	id, err := strconv.Atoi(d.Id())
 	if err != nil {
@@ -94,7 +225,7 @@ func resourceGroupUpdate(ctx context.Context, d *schema.ResourceData, m interfac
 		return diag.FromErr(err)
 	}
 
-	return diags
+	return resourceGroupRead(ctx, d, m)
 }
 
 func resourceGroupDelete(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {

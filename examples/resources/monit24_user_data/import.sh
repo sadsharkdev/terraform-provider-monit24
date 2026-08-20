@@ -1,0 +1,1 @@
+terraform import monit24_user_data.client_a 123456

@@ -60,6 +60,20 @@ export MONIT24_USER=
 export MONIT24_PASSWORD=
 ```
 
+If the account has 2FA enabled, `user`/`password` will not work (the API rejects Basic Auth for 2FA accounts). Use an API token instead — create one from the Monit24 account UI, then:
+
+```tf
+provider "monit24" {
+    token = "your-api-token"
+}
+```
+
+```bash
+export MONIT24_TOKEN=
+```
+
+`token` takes priority over `user`/`password` if both are set.
+
 ## Contributing
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md)

@@ -1,0 +1,1 @@
+terraform import monit24_weekly_suspension.weekend_quiet_hours 123456

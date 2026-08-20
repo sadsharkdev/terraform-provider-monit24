@@ -1,0 +1,1 @@
+terraform import monit24_periodic_report_address.daily 123456

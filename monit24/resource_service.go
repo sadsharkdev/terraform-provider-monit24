@@ -49,11 +49,23 @@ func resourceService() *schema.Resource {
 				Optional: true,
 				Default:  true,
 			},
+			"is_archived": {
+				Type:     schema.TypeBool,
+				Optional: true,
+				Default:  false,
+			},
 			"sensor_ids": {
 				Type:     schema.TypeSet,
 				Optional: true,
 				Elem: &schema.Schema{
 					Type: schema.TypeInt,
+				},
+			},
+			"step_names": {
+				Type:     schema.TypeList,
+				Optional: true,
+				Elem: &schema.Schema{
+					Type: schema.TypeString,
 				},
 			},
 			"notification_channel_ids": {
@@ -100,9 +112,7 @@ func newServiceFromResourceData(service client.Service, d *schema.ResourceData) 
 	service.GroupID = d.Get("group_id").(int)
 	service.Interval = d.Get("interval").(int)
 
-	if v, ok := d.GetOk("description"); ok {
-		service.Description = strPtr(v.(string))
-	}
+	service.Description = strPtrIfChanged(d, "description")
 
 	if v, ok := d.GetOk("interval"); ok {
 		service.Interval = v.(int)
@@ -111,8 +121,14 @@ func newServiceFromResourceData(service client.Service, d *schema.ResourceData) 
 	isActive := d.Get("is_active")
 	service.IsActive = boolPtr(isActive.(bool))
 
-	if v, ok := d.GetOk("sensor_ids"); ok {
-		list := v.(*schema.Set).List()
+	service.IsArchived = boolPtr(d.Get("is_archived").(bool))
+
+	// HasChange, not GetOk: both sensor_ids and step_names are Optional
+	// (non-Computed) collections, so GetOk can't distinguish "never
+	// configured" from "explicitly cleared" (both read as empty), and a
+	// clear would never reach the API.
+	if d.HasChange("sensor_ids") {
+		list := d.Get("sensor_ids").(*schema.Set).List()
 		ids := make([]int, len(list))
 
 		for i := range list {
@@ -120,6 +136,17 @@ func newServiceFromResourceData(service client.Service, d *schema.ResourceData) 
 		}
 
 		service.SensorIDs = &ids
+	}
+
+	if d.HasChange("step_names") {
+		list := d.Get("step_names").([]interface{})
+		names := make([]string, len(list))
+
+		for i := range list {
+			names[i] = list[i].(string)
+		}
+
+		service.StepNames = &names
 	}
 
 	if v, ok := d.GetOk("notification_channel_ids"); ok {
@@ -200,7 +227,12 @@ func resourceServiceCreate(ctx context.Context, d *schema.ResourceData, m interf
 
 	d.SetId(strconv.Itoa(id))
 
-	return resourceServiceUpdate(ctx, d, m)
+	// Delegate to Read, not Update: the POST above already carries every
+	// field newServiceFromResourceData can produce from d, so a follow-up
+	// GET->rebuild->PUT->GET (what Update does) would just re-send the same
+	// struct and re-fetch the same state — matching the plain Create->Read
+	// pattern every sibling resource uses.
+	return resourceServiceRead(ctx, d, m)
 }
 
 func resourceServiceRead(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
@@ -254,10 +286,32 @@ func resourceServiceRead(ctx context.Context, d *schema.ResourceData, m interfac
 		}
 	}
 
-	if service.SensorIDs != nil {
-		if err := d.Set("sensor_ids", *service.SensorIDs); err != nil {
+	if service.IsArchived != nil {
+		if err := d.Set("is_archived", *service.IsArchived); err != nil {
 			return diag.FromErr(err)
 		}
+	}
+
+	// Always d.Set, even when the API returned no value at all (nil): both
+	// fields are Optional (non-Computed), so nil genuinely means "cleared"
+	// and must be reflected as empty — same fix as resource_group.go's
+	// assigned_sensor_ids, for the same reason (skipping d.Set on nil would
+	// leave a stale, previously-set value stuck in state if the API
+	// responds with null/omits the key once cleared).
+	sensorIDs := []int{}
+	if service.SensorIDs != nil {
+		sensorIDs = *service.SensorIDs
+	}
+	if err := d.Set("sensor_ids", sensorIDs); err != nil {
+		return diag.FromErr(err)
+	}
+
+	stepNames := []string{}
+	if service.StepNames != nil {
+		stepNames = *service.StepNames
+	}
+	if err := d.Set("step_names", stepNames); err != nil {
+		return diag.FromErr(err)
 	}
 
 	if service.NotificationChannelIDs != nil {
@@ -378,4 +432,22 @@ func strPtr(s string) *string {
 
 func boolPtr(b bool) *bool {
 	return &b
+}
+
+func intPtr(i int) *int {
+	return &i
+}
+
+// strPtrIfChanged gates an Optional (non-Computed) string field's write on
+// d.HasChange rather than d.GetOk/unconditional d.Get: GetOk can't tell
+// "never configured" apart from "explicitly cleared" (both read as ""), so
+// clearing a previously-set value would never reach the API. Returns nil
+// when the field didn't change, matching the shape every caller needs for a
+// client struct's *string field.
+func strPtrIfChanged(d *schema.ResourceData, key string) *string {
+	if !d.HasChange(key) {
+		return nil
+	}
+
+	return strPtr(d.Get(key).(string))
 }
