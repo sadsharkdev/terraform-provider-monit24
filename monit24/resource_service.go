@@ -112,9 +112,7 @@ func newServiceFromResourceData(service client.Service, d *schema.ResourceData) 
 	service.GroupID = d.Get("group_id").(int)
 	service.Interval = d.Get("interval").(int)
 
-	if v, ok := d.GetOk("description"); ok {
-		service.Description = strPtr(v.(string))
-	}
+	service.Description = strPtrIfChanged(d, "description")
 
 	if v, ok := d.GetOk("interval"); ok {
 		service.Interval = v.(int)

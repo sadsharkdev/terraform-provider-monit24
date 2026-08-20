@@ -361,9 +361,19 @@ func TestServiceCreateUpdateReadDeleteLifecycle(t *testing.T) {
 		t.Errorf("expected name to round-trip through read, got %q", d.Get("name"))
 	}
 
-	if err := d.Set("description", "updated description"); err != nil {
-		t.Fatalf("unexpected error setting description: %v", err)
-	}
+	// d.Set doesn't affect HasChange (it writes the "set" overlay, not the
+	// diff), so a fresh ResourceData built from raw config is used here to
+	// get a genuine "configured" diff for description, with the id carried
+	// over manually — matching newServiceFromResourceData's HasChange gate
+	// (via strPtrIfChanged).
+	d = schema.TestResourceDataRaw(t, resourceService().Schema, map[string]interface{}{
+		"type_id":     "https",
+		"name":        "example",
+		"address":     "example.com",
+		"description": "updated description",
+	})
+	d.SetId("1")
+
 	if diags := resourceServiceUpdate(context.Background(), d, c); diags.HasError() {
 		t.Fatalf("unexpected error updating service: %v", diags)
 	}
