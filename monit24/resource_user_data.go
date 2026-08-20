@@ -10,50 +10,23 @@ import (
 )
 
 func resourceUserData() *schema.Resource {
+	// Reuses userDataSchemaFields() (monit24/resource_subaccount.go) — the
+	// same 7 fields as the nested user_data block on monit24_subaccount/
+	// monit24_account_user, here flattened onto their own resource with an
+	// account_id identifying which account they belong to.
+	fields := userDataSchemaFields()
+	fields["account_id"] = &schema.Schema{
+		Type:     schema.TypeInt,
+		Required: true,
+		ForceNew: true,
+	}
+
 	return &schema.Resource{
 		CreateContext: resourceUserDataCreate,
 		ReadContext:   resourceUserDataRead,
 		UpdateContext: resourceUserDataUpdate,
 		DeleteContext: resourceUserDataDelete,
-		Schema: map[string]*schema.Schema{
-			"account_id": {
-				Type:     schema.TypeInt,
-				Required: true,
-				ForceNew: true,
-			},
-			"email_address": {
-				Type:     schema.TypeString,
-				Required: true,
-			},
-			"address": {
-				Type:     schema.TypeString,
-				Optional: true,
-			},
-			"contact_person": {
-				Type:     schema.TypeString,
-				Optional: true,
-			},
-			"phone_number": {
-				Type:     schema.TypeString,
-				Optional: true,
-			},
-			"tax_identification_number": {
-				Type:     schema.TypeString,
-				Optional: true,
-			},
-			"ip_whitelist": {
-				Type:     schema.TypeList,
-				Optional: true,
-				Elem: &schema.Schema{
-					Type: schema.TypeString,
-				},
-			},
-			"ip_whitelist_enabled": {
-				Type:     schema.TypeBool,
-				Optional: true,
-				Default:  false,
-			},
-		},
+		Schema:        fields,
 		Importer: &schema.ResourceImporter{
 			StateContext: schema.ImportStatePassthroughContext,
 		},
@@ -65,25 +38,15 @@ func flatUserDataFromResourceData(d *schema.ResourceData) client.UserData {
 		EmailAddress: d.Get("email_address").(string),
 	}
 
-	// Gate on HasChange rather than GetOk: GetOk can't tell "never configured"
-	// apart from "explicitly cleared" since both read as the zero value, so a
-	// user removing a previously-set value from config would never reach the
-	// API (omitempty drops a nil pointer) and the clear would silently fail.
-	if d.HasChange("address") {
-		userData.Address = strPtr(d.Get("address").(string))
-	}
-
-	if d.HasChange("contact_person") {
-		userData.ContactPerson = strPtr(d.Get("contact_person").(string))
-	}
-
-	if d.HasChange("phone_number") {
-		userData.PhoneNumber = strPtr(d.Get("phone_number").(string))
-	}
-
-	if d.HasChange("tax_identification_number") {
-		userData.TaxIdentificationNumber = strPtr(d.Get("tax_identification_number").(string))
-	}
+	// strPtrIfChanged gates on HasChange rather than GetOk: GetOk can't tell
+	// "never configured" apart from "explicitly cleared" since both read as
+	// the zero value, so a user removing a previously-set value from config
+	// would never reach the API (omitempty drops a nil pointer) and the
+	// clear would silently fail.
+	userData.Address = strPtrIfChanged(d, "address")
+	userData.ContactPerson = strPtrIfChanged(d, "contact_person")
+	userData.PhoneNumber = strPtrIfChanged(d, "phone_number")
+	userData.TaxIdentificationNumber = strPtrIfChanged(d, "tax_identification_number")
 
 	if d.HasChange("ip_whitelist") {
 		list := d.Get("ip_whitelist").([]interface{})

@@ -376,6 +376,50 @@ func TestServiceCreateUpdateReadDeleteLifecycle(t *testing.T) {
 	}
 }
 
+// TestServiceReadClearsSensorIDsAndStepNamesWhenAPIReturnsNil proves the
+// Read fix works when the API omits/nulls the keys — it doesn't establish
+// that the live API actually behaves that way once a previously-set value
+// is cleared (vs. echoing back an explicit []), unverified against the live
+// API in the same way CLAUDE.md already flags for is_archived.
+func TestServiceReadClearsSensorIDsAndStepNamesWhenAPIReturnsNil(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		// No sensor_ids/step_names keys at all, matching how the live API
+		// might respond once a previously-set value has been cleared.
+		json.NewEncoder(w).Encode(client.Service{TypeID: "https", Name: "example", Address: "example.com"})
+	}))
+	defer server.Close()
+
+	c := client.NewTestClient(server.URL)
+
+	d := schema.TestResourceDataRaw(t, resourceService().Schema, map[string]interface{}{
+		"type_id": "https",
+		"name":    "example",
+		"address": "example.com",
+	})
+	d.SetId("1")
+
+	// Simulate stale prior state: previously-set values sitting in state
+	// from before they were cleared server-side.
+	if err := d.Set("sensor_ids", []interface{}{1, 2}); err != nil {
+		t.Fatalf("unexpected error seeding stale sensor_ids: %v", err)
+	}
+	if err := d.Set("step_names", []interface{}{"step one"}); err != nil {
+		t.Fatalf("unexpected error seeding stale step_names: %v", err)
+	}
+
+	if diags := resourceServiceRead(context.Background(), d, c); diags.HasError() {
+		t.Fatalf("unexpected error reading service: %v", diags)
+	}
+
+	if got := d.Get("sensor_ids").(*schema.Set).List(); len(got) != 0 {
+		t.Errorf("expected sensor_ids to be cleared to an empty set when the API returns nil, got %v", got)
+	}
+	if got := d.Get("step_names").([]interface{}); len(got) != 0 {
+		t.Errorf("expected step_names to be cleared to an empty list when the API returns nil, got %v", got)
+	}
+}
+
 func TestParseBool(t *testing.T) {
 	tests := []struct {
 		input   string

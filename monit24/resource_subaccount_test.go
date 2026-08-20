@@ -370,3 +370,30 @@ func TestUpdateAccountAndPasswordSkipsChangePasswordWhenUnchanged(t *testing.T) 
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestValidatePasswordTransition(t *testing.T) {
+	tests := []struct {
+		name    string
+		old     string
+		new     string
+		wantErr bool
+	}{
+		{"never set, still unset", "", "", false},
+		{"set for the first time", "", "new-password", false},
+		{"rotated to a new value", "old-password", "new-password", false},
+		{"unchanged", "same-password", "same-password", false},
+		{"cleared", "old-password", "", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validatePasswordTransition(tt.old, tt.new)
+			if tt.wantErr && err == nil {
+				t.Errorf("validatePasswordTransition(%q, %q): expected an error, got nil", tt.old, tt.new)
+			}
+			if !tt.wantErr && err != nil {
+				t.Errorf("validatePasswordTransition(%q, %q): unexpected error: %v", tt.old, tt.new, err)
+			}
+		})
+	}
+}

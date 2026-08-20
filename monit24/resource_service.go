@@ -294,16 +294,26 @@ func resourceServiceRead(ctx context.Context, d *schema.ResourceData, m interfac
 		}
 	}
 
+	// Always d.Set, even when the API returned no value at all (nil): both
+	// fields are Optional (non-Computed), so nil genuinely means "cleared"
+	// and must be reflected as empty — same fix as resource_group.go's
+	// assigned_sensor_ids, for the same reason (skipping d.Set on nil would
+	// leave a stale, previously-set value stuck in state if the API
+	// responds with null/omits the key once cleared).
+	sensorIDs := []int{}
 	if service.SensorIDs != nil {
-		if err := d.Set("sensor_ids", *service.SensorIDs); err != nil {
-			return diag.FromErr(err)
-		}
+		sensorIDs = *service.SensorIDs
+	}
+	if err := d.Set("sensor_ids", sensorIDs); err != nil {
+		return diag.FromErr(err)
 	}
 
+	stepNames := []string{}
 	if service.StepNames != nil {
-		if err := d.Set("step_names", *service.StepNames); err != nil {
-			return diag.FromErr(err)
-		}
+		stepNames = *service.StepNames
+	}
+	if err := d.Set("step_names", stepNames); err != nil {
+		return diag.FromErr(err)
 	}
 
 	if service.NotificationChannelIDs != nil {
@@ -428,4 +438,18 @@ func boolPtr(b bool) *bool {
 
 func intPtr(i int) *int {
 	return &i
+}
+
+// strPtrIfChanged gates an Optional (non-Computed) string field's write on
+// d.HasChange rather than d.GetOk/unconditional d.Get: GetOk can't tell
+// "never configured" apart from "explicitly cleared" (both read as ""), so
+// clearing a previously-set value would never reach the API. Returns nil
+// when the field didn't change, matching the shape every caller needs for a
+// client struct's *string field.
+func strPtrIfChanged(d *schema.ResourceData, key string) *string {
+	if !d.HasChange(key) {
+		return nil
+	}
+
+	return strPtr(d.Get(key).(string))
 }

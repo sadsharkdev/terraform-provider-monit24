@@ -204,6 +204,11 @@ func TestGroupCreateUpdateDeleteLifecycle(t *testing.T) {
 	}
 }
 
+// TestGroupReadClearsAssignedSensorIDsWhenAPIReturnsNil proves the Read fix
+// works when the API omits/nulls the key — it doesn't establish that the
+// live API actually behaves that way once a previously-set assignment is
+// cleared (vs. echoing back an explicit {}), which is unverified against
+// the live API in the same way CLAUDE.md already flags for is_archived.
 func TestGroupReadClearsAssignedSensorIDsWhenAPIReturnsNil(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

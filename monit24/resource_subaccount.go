@@ -158,6 +158,7 @@ func resourceSubaccount() *schema.Resource {
 		Importer: &schema.ResourceImporter{
 			StateContext: schema.ImportStatePassthroughContext,
 		},
+		CustomizeDiff: rejectPasswordClear,
 	}
 }
 
@@ -364,20 +365,40 @@ func updateAccountAndPassword(ctx context.Context, c client.Client, id int, d *s
 	}
 
 	if d.HasChange("password") {
-		password := d.Get("password").(string)
-		if password == "" {
-			// Silently no-op'ing here would let Terraform believe the
-			// password was cleared (it's written into state regardless,
-			// per the password field's own doc comment) while the real
-			// account password on the server stays whatever it was —
-			// permanent, undetectable drift. There's no API operation to
-			// reset a password to empty, so reject the transition instead.
-			return fmt.Errorf("password cannot be cleared once set (there is no API operation to reset it to empty) — set it back to its previous value, or manage password rotation via set_password_url instead")
-		}
-
-		if err := c.ChangeAccountPassword(ctx, id, password); err != nil {
+		// rejectPasswordClear (CustomizeDiff) already rejects the plan
+		// before it ever reaches here if it would clear a previously-set
+		// password, so a HasChange here always means a genuinely new,
+		// non-empty value.
+		if err := c.ChangeAccountPassword(ctx, id, d.Get("password").(string)); err != nil {
 			return err
 		}
+	}
+
+	return nil
+}
+
+// rejectPasswordClear is a CustomizeDiff for monit24_subaccount and
+// monit24_account_user: there is no API operation to reset an account's
+// password to empty, so a plan that would clear a previously-set password
+// is rejected here, at plan time — before Apply ever runs. Rejecting inside
+// UpdateContext instead would be too late: terraform-plugin-sdk/v2 persists
+// the proposed diff into state even when Update returns an error (see
+// resource_data.go's Partial doc comment), so state would still end up
+// believing the password was cleared while the real server-side value
+// stayed untouched.
+func rejectPasswordClear(ctx context.Context, d *schema.ResourceDiff, meta interface{}) error {
+	old, new := d.GetChange("password")
+	return validatePasswordTransition(old.(string), new.(string))
+}
+
+// validatePasswordTransition is the pure decision logic behind
+// rejectPasswordClear, split out so it can be unit-tested directly —
+// *schema.ResourceDiff can't be constructed outside the schema package,
+// the same limitation that applies to simulating a genuine prior-state
+// diff for HasChange-based logic elsewhere in this provider.
+func validatePasswordTransition(old, new string) error {
+	if old != "" && new == "" {
+		return fmt.Errorf("password cannot be cleared once set (there is no API operation to reset it to empty) — set it back to its previous value, or manage password rotation via set_password_url instead")
 	}
 
 	return nil
